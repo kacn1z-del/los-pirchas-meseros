@@ -99,13 +99,18 @@
     padding:16px 16px 20px;overflow-y:auto;border-top:1px solid var(--char-700);}
   .sheet__handle{width:40px;height:4px;background:var(--char-700);border-radius:99px;margin:0 auto 14px;}
   .sheet h2{font-family:var(--font-display);margin:0 0 12px;font-size:18px;}
-  .cart-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--char-700);}
+  .cart-row{padding:9px 0;border-bottom:1px solid var(--char-700);}
+  .cart-row__top{display:flex;align-items:center;gap:10px;}
   .cart-row__name{flex:1;font-size:14px;}
   .cart-row__name small{display:block;color:var(--ink-400);font-family:var(--font-mono);font-size:12px;}
   .qty-ctrl{display:flex;align-items:center;gap:8px;}
   .qty-ctrl button{width:28px;height:28px;border-radius:8px;border:1px solid var(--char-700);
     background:var(--char-950);color:var(--paper);font-size:16px;line-height:1;}
   .cart-row__sub{font-family:var(--font-mono);font-size:13px;min-width:64px;text-align:right;}
+  .cart-row__note{width:100%;margin-top:7px;padding:8px 10px;border-radius:8px;
+    border:1px solid var(--char-700);background:var(--char-950);color:var(--paper);
+    font-size:12.5px;}
+  .cart-row__note::placeholder{color:var(--ink-400);}
   .cart-total{display:flex;justify-content:space-between;padding:14px 0 6px;font-weight:700;
     font-size:17px;}
   .sheet textarea{width:100%;margin-top:8px;padding:10px;border-radius:10px;border:1px solid var(--char-700);
@@ -238,7 +243,7 @@ function addToDraft(item) {
   const items = [...state.draftItems];
   const idx = items.findIndex((i) => i.nombre === item.nombre);
   if (idx >= 0) items[idx] = { ...items[idx], qty: items[idx].qty + 1 };
-  else items.push({ nombre: item.nombre, precio: item.precio, qty: 1 });
+  else items.push({ nombre: item.nombre, precio: item.precio, qty: 1, nota: '' });
   setState({ draftItems: items });
 }
 
@@ -247,6 +252,11 @@ function changeQty(nombre, delta) {
     i.nombre === nombre ? { ...i, qty: i.qty + delta } : i
   );
   items = items.filter((i) => i.qty > 0);
+  setState({ draftItems: items });
+}
+
+function setItemNota(nombre, nota) {
+  const items = state.draftItems.map((i) => (i.nombre === nombre ? { ...i, nota } : i));
   setState({ draftItems: items });
 }
 
@@ -444,13 +454,18 @@ function renderCartSheet() {
         ${state.draftItems.length === 0 ? `<div class="empty-hint">Todavía no hay artículos.</div>` : ''}
         ${state.draftItems.map((i) => `
           <div class="cart-row">
-            <div class="cart-row__name">${i.nombre}<small>${fmt(i.precio)} c/u</small></div>
-            <div class="qty-ctrl">
-              <button data-dec="${encodeURIComponent(i.nombre)}">−</button>
-              <span>${i.qty}</span>
-              <button data-inc="${encodeURIComponent(i.nombre)}">+</button>
+            <div class="cart-row__top">
+              <div class="cart-row__name">${i.nombre}<small>${fmt(i.precio)} c/u</small></div>
+              <div class="qty-ctrl">
+                <button data-dec="${encodeURIComponent(i.nombre)}">−</button>
+                <span>${i.qty}</span>
+                <button data-inc="${encodeURIComponent(i.nombre)}">+</button>
+              </div>
+              <div class="cart-row__sub">${fmt(i.precio * i.qty)}</div>
             </div>
-            <div class="cart-row__sub">${fmt(i.precio * i.qty)}</div>
+            <input class="cart-row__note" data-note="${encodeURIComponent(i.nombre)}"
+              placeholder="Agregar o quitar algo (ej: sin cebolla, extra queso)"
+              value="${(i.nota || '').replace(/"/g, '&quot;')}" />
           </div>
         `).join('')}
         <textarea id="notes-input" placeholder="Notas para cocina (opcional)" rows="2">${state.notes}</textarea>
@@ -489,6 +504,7 @@ function bindCartSheetEvents() {
   document.getElementById('sheet-close').addEventListener('click', () => setState({ cartOpen: false, paying: false }));
   root.querySelectorAll('[data-inc]').forEach((b) => b.addEventListener('click', () => changeQty(decodeURIComponent(b.dataset.inc), 1)));
   root.querySelectorAll('[data-dec]').forEach((b) => b.addEventListener('click', () => changeQty(decodeURIComponent(b.dataset.dec), -1)));
+  root.querySelectorAll('[data-note]').forEach((inp) => inp.addEventListener('change', () => setItemNota(decodeURIComponent(inp.dataset.note), inp.value)));
   const notesInput = document.getElementById('notes-input');
   if (notesInput) notesInput.addEventListener('change', () => setState({ notes: notesInput.value }));
 
