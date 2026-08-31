@@ -34,6 +34,14 @@
   .topbar__mesero{font-size:12px;color:var(--ink-400);font-family:var(--font-mono);}
   .topbar__dot{width:8px;height:8px;border-radius:50%;background:var(--status-green);}
   .topbar__dot.off{background:var(--red-500);}
+  .cart-icon-btn{position:relative;background:var(--char-900);border:1px solid var(--char-700);
+    color:var(--paper);border-radius:10px;padding:6px 10px;font-size:16px;line-height:1;}
+  .cart-icon-badge{position:absolute;top:-6px;right:-6px;background:var(--flame-600);color:#fff;
+    font-size:11px;font-weight:700;border-radius:999px;min-width:18px;height:18px;
+    display:flex;align-items:center;justify-content:center;padding:0 4px;}
+  .menu-section{margin-bottom:22px;}
+  .menu-section__title{font-family:var(--font-display);font-size:15px;font-weight:700;
+    color:var(--ember-400);margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--char-700);}
 
   /* ---- Login screen ---- */
   .login{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
@@ -380,17 +388,26 @@ function renderTables() {
   });
 }
 
+function slugify(text) {
+  return text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-');
+}
+
 function renderOrder() {
   const grouped = groupedMenu();
   const categories = Object.keys(grouped);
-  const activeCat = state.category && grouped[state.category] ? state.category : categories[0];
-  const items = grouped[activeCat] || [];
 
   root.innerHTML = `
     <div class="topbar">
       <button class="topbar__back" id="back-btn">← Mesas</button>
       <div class="topbar__spacer"></div>
       <div class="topbar__mesero">${state.mesero}</div>
+      <button class="cart-icon-btn" id="cart-icon">
+        🧾 ${draftCount() > 0 ? `<span class="cart-icon-badge">${draftCount()}</span>` : ''}
+      </button>
     </div>
     <div class="screen">
       <div class="order-head">
@@ -401,21 +418,26 @@ function renderOrder() {
         ? `<div class="empty-hint">El menú todavía no tiene platos cargados en Firestore.</div>`
         : `
         <div class="cat-nav">
-          ${categories.map((c) => `<button class="cat-chip ${c === activeCat ? 'active' : ''}" data-cat="${c}">${c}</button>`).join('')}
+          ${categories.map((c) => `<button class="cat-chip" data-jump="${slugify(c)}">${c}</button>`).join('')}
         </div>
-        <div class="item-grid">
-          ${items.map((it) => {
-            const disponible = it.disponible !== false;
-            const inCart = state.draftItems.find((d) => d.nombre === it.nombre);
-            return `
-              <button class="item-card ${!disponible ? 'unavailable' : ''}" data-item='${encodeURIComponent(JSON.stringify(it))}' ${!disponible ? 'disabled' : ''}>
-                ${inCart ? `<span class="item-card__badge">${inCart.qty}</span>` : ''}
-                <div class="item-card__name">${it.nombre}</div>
-                <div class="item-card__price">${fmt(it.precio)}</div>
-              </button>
-            `;
-          }).join('')}
-        </div>
+        ${categories.map((cat) => `
+          <div class="menu-section" id="cat-${slugify(cat)}">
+            <div class="menu-section__title">${cat}</div>
+            <div class="item-grid">
+              ${grouped[cat].map((it) => {
+                const disponible = it.disponible !== false;
+                const inCart = state.draftItems.find((d) => d.nombre === it.nombre);
+                return `
+                  <button class="item-card ${!disponible ? 'unavailable' : ''}" data-item='${encodeURIComponent(JSON.stringify(it))}' ${!disponible ? 'disabled' : ''}>
+                    ${inCart ? `<span class="item-card__badge">${inCart.qty}</span>` : ''}
+                    <div class="item-card__name">${it.nombre}</div>
+                    <div class="item-card__price">${fmt(it.precio)}</div>
+                  </button>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        `).join('')}
       `}
     </div>
     ${draftCount() > 0 && !state.cartOpen ? `
@@ -429,7 +451,10 @@ function renderOrder() {
   `;
 
   document.getElementById('back-btn').addEventListener('click', backToTables);
-  root.querySelectorAll('.cat-chip').forEach((b) => b.addEventListener('click', () => setState({ category: b.dataset.cat })));
+  document.getElementById('cart-icon').addEventListener('click', () => setState({ cartOpen: true }));
+  root.querySelectorAll('.cat-chip').forEach((b) => b.addEventListener('click', () => {
+    document.getElementById('cat-' + b.dataset.jump)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }));
   root.querySelectorAll('.item-card').forEach((b) => {
     if (b.disabled) return;
     b.addEventListener('click', () => addToDraft(JSON.parse(decodeURIComponent(b.dataset.item))));
@@ -451,7 +476,7 @@ function renderCartSheet() {
         <button class="close-x" id="sheet-close">✕</button>
         <div class="sheet__handle"></div>
         <h2>Mesa ${state.activeMesa}</h2>
-        ${state.draftItems.length === 0 ? `<div class="empty-hint">Todavía no hay artículos.</div>` : ''}
+        ${state.draftItems.length === 0 ? `<div class="empty-hint">Todavía no hay artículos. Cerrá esto y tocá un plato del menú para agregarlo.</div>` : ''}
         ${state.draftItems.map((i) => `
           <div class="cart-row">
             <div class="cart-row__top">
