@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>Los Pirchas — Meseros</title>
+<style>
+  :root{
+    --char-950:#171310; --char-900:#221b16; --char-700:#3a2c22;
+    --flame-600:#d9391f; --flame-500:#e8792b; --ember-400:#f2a53a; --gold-200:#f6d98a;
+    --paper:#fbf4ea; --paper-dim:#f3e6d5;
+    --ink-900:#241c15; --ink-600:#6b5945; --ink-400:#8f7c68;
+    --status-green:#3f9868; --red-500:#c92f1c;
+    --font-display:'Bricolage Grotesque','Sora',system-ui,sans-serif;
+    --font-body:'IBM Plex Sans',system-ui,sans-serif;
+    --font-mono:'IBM Plex Mono','SFMono-Regular',monospace;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;height:100%;background:var(--char-950);color:var(--paper);font-family:var(--font-body);-webkit-tap-highlight-color:transparent;}
+  #app{min-height:100%;display:flex;flex-direction:column;}
+  button{font-family:inherit;cursor:pointer;}
+  input,textarea{font-family:inherit;}
+
+  /* ---- Topbar ---- */
+  .topbar{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:10px;
+    padding:12px 14px;background:linear-gradient(180deg,var(--char-900),var(--char-950));
+    border-bottom:1px solid var(--char-700);}
+  .topbar__brand{font-family:var(--font-display);font-weight:700;font-size:17px;
+    background:linear-gradient(90deg,var(--flame-600),var(--ember-400));
+    -webkit-background-clip:text;background-clip:text;color:transparent;}
+  .topbar__spacer{flex:1;}
+  .topbar__back{background:none;border:1px solid var(--char-700);color:var(--paper);
+    border-radius:10px;padding:6px 10px;font-size:14px;}
+  .topbar__mesero{font-size:12px;color:var(--ink-400);font-family:var(--font-mono);}
+  .topbar__dot{width:8px;height:8px;border-radius:50%;background:var(--status-green);}
+  .topbar__dot.off{background:var(--red-500);}
+
+  /* ---- Login screen ---- */
+  .login{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:24px;text-align:center;gap:16px;}
+  .login__logo{font-family:var(--font-display);font-size:30px;font-weight:800;
+    background:linear-gradient(90deg,var(--flame-600),var(--ember-400),var(--gold-200));
+    -webkit-background-clip:text;background-clip:text;color:transparent;}
+  .login__sub{color:var(--ink-400);font-size:14px;margin-top:-8px;}
+  .login input{width:100%;max-width:320px;padding:14px 16px;border-radius:12px;
+    border:1px solid var(--char-700);background:var(--char-900);color:var(--paper);font-size:16px;}
+  .login button{width:100%;max-width:320px;padding:14px;border-radius:12px;border:none;
+    background:linear-gradient(90deg,var(--flame-600),var(--flame-500));color:#fff;
+    font-weight:700;font-size:15px;}
+  .login button:disabled{opacity:.4;}
+
+  /* ---- Tables screen ---- */
+  .screen{flex:1;padding:14px;overflow-y:auto;padding-bottom:90px;}
+  .section-title{font-family:var(--font-display);font-size:13px;letter-spacing:.06em;
+    text-transform:uppercase;color:var(--ink-400);margin:18px 0 10px;}
+  .section-title:first-child{margin-top:0;}
+  .table-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(74px,1fr));gap:8px;}
+  .table-btn{aspect-ratio:1;border-radius:12px;border:1px solid var(--char-700);
+    background:var(--char-900);color:var(--paper);display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:2px;font-weight:700;font-size:15px;}
+  .table-btn.free{background:linear-gradient(160deg,#2c4a3a,#1f3428);border-color:#3f9868;}
+  .table-btn.busy{background:linear-gradient(160deg,var(--flame-600),#a12314);border-color:var(--flame-500);}
+  .table-btn small{font-family:var(--font-mono);font-weight:400;font-size:10px;opacity:.85;}
+  .empty-hint{color:var(--ink-400);font-size:13px;padding:20px 4px;}
+
+  /* ---- Order screen ---- */
+  .order-head{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:12px;}
+  .order-head h1{font-family:var(--font-display);font-size:20px;margin:0;}
+  .order-head span{color:var(--ink-400);font-size:12px;font-family:var(--font-mono);}
+  .cat-nav{display:flex;gap:8px;overflow-x:auto;padding-bottom:10px;margin-bottom:12px;
+    scrollbar-width:none;}
+  .cat-nav::-webkit-scrollbar{display:none;}
+  .cat-chip{flex:0 0 auto;padding:8px 14px;border-radius:999px;border:1px solid var(--char-700);
+    background:var(--char-900);color:var(--paper-dim);font-size:13px;font-weight:600;white-space:nowrap;}
+  .cat-chip.active{background:linear-gradient(90deg,var(--flame-600),var(--flame-500));
+    border-color:transparent;color:#fff;}
+  .item-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;}
+  .item-card{text-align:left;border-radius:14px;border:1px solid var(--char-700);
+    background:var(--char-900);color:var(--paper);padding:12px;display:flex;flex-direction:column;
+    gap:6px;min-height:84px;position:relative;}
+  .item-card:active{transform:scale(.97);}
+  .item-card.unavailable{opacity:.4;}
+  .item-card__name{font-weight:700;font-size:14px;line-height:1.25;}
+  .item-card__price{font-family:var(--font-mono);color:var(--ember-400);font-size:13px;}
+  .item-card__badge{position:absolute;top:8px;right:8px;background:var(--flame-600);color:#fff;
+    font-size:11px;font-weight:700;border-radius:999px;min-width:20px;height:20px;
+    display:flex;align-items:center;justify-content:center;padding:0 5px;}
+
+  /* ---- Cart floating bar / sheet ---- */
+  .cart-bar{position:fixed;left:14px;right:14px;bottom:14px;z-index:30;
+    background:linear-gradient(90deg,var(--flame-600),var(--flame-500));border-radius:16px;
+    padding:14px 16px;display:flex;align-items:center;justify-content:space-between;
+    box-shadow:0 8px 24px rgba(0,0,0,.4);color:#fff;font-weight:700;}
+  .cart-bar span.count{background:rgba(255,255,255,.25);border-radius:999px;padding:2px 9px;
+    font-size:12px;margin-right:8px;}
+  .sheet-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:40;display:flex;
+    align-items:flex-end;}
+  .sheet{width:100%;max-height:82vh;background:var(--char-900);border-radius:20px 20px 0 0;
+    padding:16px 16px 20px;overflow-y:auto;border-top:1px solid var(--char-700);}
+  .sheet__handle{width:40px;height:4px;background:var(--char-700);border-radius:99px;margin:0 auto 14px;}
+  .sheet h2{font-family:var(--font-display);margin:0 0 12px;font-size:18px;}
+  .cart-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--char-700);}
+  .cart-row__name{flex:1;font-size:14px;}
+  .cart-row__name small{display:block;color:var(--ink-400);font-family:var(--font-mono);font-size:12px;}
+  .qty-ctrl{display:flex;align-items:center;gap:8px;}
+  .qty-ctrl button{width:28px;height:28px;border-radius:8px;border:1px solid var(--char-700);
+    background:var(--char-950);color:var(--paper);font-size:16px;line-height:1;}
+  .cart-row__sub{font-family:var(--font-mono);font-size:13px;min-width:64px;text-align:right;}
+  .cart-total{display:flex;justify-content:space-between;padding:14px 0 6px;font-weight:700;
+    font-size:17px;}
+  .sheet textarea{width:100%;margin-top:8px;padding:10px;border-radius:10px;border:1px solid var(--char-700);
+    background:var(--char-950);color:var(--paper);resize:vertical;font-size:13px;}
+  .sheet-actions{display:flex;gap:10px;margin-top:14px;}
+  .btn-primary{flex:1;padding:14px;border-radius:12px;border:none;
+    background:linear-gradient(90deg,var(--flame-600),var(--flame-500));color:#fff;font-weight:700;font-size:14px;}
+  .btn-ghost{flex:1;padding:14px;border-radius:12px;border:1px solid var(--char-700);
+    background:none;color:var(--paper);font-weight:700;font-size:14px;}
+  .btn-primary:disabled,.btn-ghost:disabled{opacity:.4;}
+  .close-x{position:absolute;right:14px;top:14px;background:none;border:none;color:var(--ink-400);font-size:20px;}
+  .pay-row{display:flex;gap:8px;margin:10px 0;}
+  .pay-chip{flex:1;padding:10px;border-radius:10px;border:1px solid var(--char-700);
+    background:var(--char-950);color:var(--paper);font-size:13px;font-weight:600;}
+  .pay-chip.active{background:linear-gradient(90deg,var(--flame-600),var(--flame-500));border-color:transparent;}
+  .toast{position:fixed;left:50%;top:16px;transform:translateX(-50%);background:var(--status-green);
+    color:#fff;padding:10px 18px;border-radius:10px;font-size:13px;font-weight:600;z-index:60;
+    box-shadow:0 6px 18px rgba(0,0,0,.35);}
+  .loading{flex:1;display:flex;align-items:center;justify-content:center;color:var(--ink-400);}
+</style>
+</head>
+<body>
+<div id="app"><div class="loading">Cargando…</div></div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+import {
+  getFirestore, collection, doc, onSnapshot, addDoc, updateDoc,
+  serverTimestamp, query, where
+} from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+
+// Mismo proyecto Firebase que usan la web de cliente y el panel admin de Los Pirchas
+const firebaseConfig = {
+  apiKey: 'AIzaSyBLVHsF0VqPorPkK0auaWUH_4-k-loC6iU',
+  authDomain: 'acosta-food.firebaseapp.com',
+  projectId: 'acosta-food',
+  storageBucket: 'acosta-food.firebasestorage.app',
+  messagingSenderId: '605529235094',
+  appId: '1:605529235094:web:035dff54f04af00654acb7',
+  measurementId: 'G-QWEN1MWXXZ',
+};
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app, 'default'); // el proyecto usa el ID de base "default", no "(default)"
+
+// ---------- Utilidades ----------
+const fmt = (v) => `₡${Number(v ?? 0).toLocaleString('es-CR')}`;
+const root = document.getElementById('app');
+
+const SALON = Array.from({ length: 28 }, (_, i) => String(i + 1));
+const LLEVAR = ['Llevar 1', 'Llevar 2'];
+const EXPRESS = ['Express 1', 'Express 2', 'Express 3'];
+
+let state = {
+  mesero: localStorage.getItem('pirchas-mesero') || '',
+  screen: 'login',        // login | tables | order
+  menuItems: [],
+  openOrders: [],          // pedidos con mesaAbierta === true
+  activeMesa: null,
+  activeOrderId: null,     // id del pedido abierto de esa mesa (si existe)
+  draftItems: [],          // {nombre, precio, qty}
+  notes: '',
+  category: null,
+  cartOpen: false,
+  paying: false,
+  paymentMethod: 'efectivo',
+  saving: false,
+  toast: null,
+};
+
+function setState(patch) {
+  state = { ...state, ...patch };
+  render();
+}
+
+// ---------- Firestore listeners ----------
+onSnapshot(collection(db, 'Menu'), (snap) => {
+  setState({ menuItems: snap.docs.map((d) => ({ id: d.id, ...d.data() })) });
+});
+
+onSnapshot(
+  query(collection(db, 'orders'), where('mesaAbierta', '==', true)),
+  (snap) => {
+    setState({ openOrders: snap.docs.map((d) => ({ id: d.id, ...d.data() })) });
+  },
+  (err) => console.error('orders listener:', err)
+);
+
+// ---------- Helpers de datos ----------
+function findOpenOrder(mesa) {
+  return state.openOrders.find((o) => o.mesa === mesa) || null;
+}
+
+function groupedMenu() {
+  const grouped = {};
+  state.menuItems.forEach((it) => {
+    const cat = it.categoria || 'Otros';
+    grouped[cat] = grouped[cat] || [];
+    grouped[cat].push(it);
+  });
+  return grouped;
+}
+
+function draftTotal() {
+  return state.draftItems.reduce((s, i) => s + i.precio * i.qty, 0);
+}
+function draftCount() {
+  return state.draftItems.reduce((s, i) => s + i.qty, 0);
+}
+
+// ---------- Acciones ----------
+function openTable(mesa) {
+  const existing = findOpenOrder(mesa);
+  setState({
+    screen: 'order',
+    activeMesa: mesa,
+    activeOrderId: existing ? existing.id : null,
+    draftItems: existing ? existing.items.map((i) => ({ ...i })) : [],
+    notes: existing ? (existing.notes || '') : '',
+    category: null,
+    cartOpen: false,
+    paying: false,
+  });
+}
+
+function backToTables() {
+  setState({ screen: 'tables', activeMesa: null, activeOrderId: null, draftItems: [], cartOpen: false });
+}
+
+function addToDraft(item) {
+  const items = [...state.draftItems];
+  const idx = items.findIndex((i) => i.nombre === item.nombre);
+  if (idx >= 0) items[idx] = { ...items[idx], qty: items[idx].qty + 1 };
+  else items.push({ nombre: item.nombre, precio: item.precio, qty: 1 });
+  setState({ draftItems: items });
+}
+
+function changeQty(nombre, delta) {
+  let items = state.draftItems.map((i) =>
+    i.nombre === nombre ? { ...i, qty: i.qty + delta } : i
+  );
+  items = items.filter((i) => i.qty > 0);
+  setState({ draftItems: items });
+}
+
+async function sendOrder() {
+  if (state.draftItems.length === 0 || state.saving) return;
+  setState({ saving: true });
+  const tipo = SALON.includes(state.activeMesa) ? 'salon' : (LLEVAR.includes(state.activeMesa) ? 'llevar' : 'express');
+  const payload = {
+    mesa: state.activeMesa,
+    tipo,
+    mesero: state.mesero,
+    clientName: `Mesa ${state.activeMesa}`,
+    restaurantName: 'Los Pirchas',
+    items: state.draftItems,
+    total: draftTotal(),
+    notes: state.notes.trim() || null,
+    status: 'pending',
+    mesaAbierta: true,
+    updatedAt: serverTimestamp(),
+  };
+  try {
+    if (state.activeOrderId) {
+      await updateDoc(doc(db, 'orders', state.activeOrderId), payload);
+    } else {
+      const ref = await addDoc(collection(db, 'orders'), { ...payload, createdAt: serverTimestamp() });
+      setState({ activeOrderId: ref.id });
+    }
+    setState({ saving: false, cartOpen: false, toast: 'Pedido enviado a cocina' });
+    setTimeout(() => setState({ toast: null }), 2200);
+  } catch (err) {
+    setState({ saving: false, toast: 'Error: ' + err.message });
+    setTimeout(() => setState({ toast: null }), 3000);
+  }
+}
+
+async function closeTable() {
+  if (!state.activeOrderId || state.saving) return;
+  setState({ saving: true });
+  try {
+    await updateDoc(doc(db, 'orders', state.activeOrderId), {
+      status: 'delivered',
+      mesaAbierta: false,
+      paymentMethod: state.paymentMethod,
+      total: draftTotal(),
+      items: state.draftItems,
+      closedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    setState({ saving: false, paying: false, toast: 'Mesa cerrada y cobrada' });
+    setTimeout(() => { setState({ toast: null }); backToTables(); }, 1200);
+  } catch (err) {
+    setState({ saving: false, toast: 'Error: ' + err.message });
+    setTimeout(() => setState({ toast: null }), 3000);
+  }
+}
+
+function startMesero(name) {
+  localStorage.setItem('pirchas-mesero', name);
+  setState({ mesero: name, screen: 'tables' });
+}
+
+// ---------- Render ----------
+function render() {
+  if (!state.mesero && state.screen !== 'tables') {
+    // primera carga
+  }
+  if (state.screen === 'login' || !state.mesero) {
+    renderLogin();
+  } else if (state.screen === 'tables') {
+    renderTables();
+  } else if (state.screen === 'order') {
+    renderOrder();
+  }
+}
+
+function renderLogin() {
+  root.innerHTML = `
+    <div class="login">
+      <div class="login__logo">🔥 Los Pirchas</div>
+      <div class="login__sub">Toma de pedidos — Meseros</div>
+      <input id="mesero-input" placeholder="Tu nombre" autocomplete="off" />
+      <button id="mesero-go" disabled>Empezar turno</button>
+    </div>
+  `;
+  const input = document.getElementById('mesero-input');
+  const btn = document.getElementById('mesero-go');
+  input.addEventListener('input', () => { btn.disabled = !input.value.trim(); });
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && input.value.trim()) startMesero(input.value.trim()); });
+  btn.addEventListener('click', () => startMesero(input.value.trim()));
+}
+
+function tableButton(mesa) {
+  const order = findOpenOrder(mesa);
+  const busy = !!order;
+  return `
+    <button class="table-btn ${busy ? 'busy' : 'free'}" data-mesa="${mesa}">
+      ${mesa.replace(/^(Llevar|Express) /, '')}
+      ${busy ? `<small>${fmt(order.total)}</small>` : ''}
+    </button>
+  `;
+}
+
+function renderTables() {
+  root.innerHTML = `
+    <div class="topbar">
+      <div class="topbar__brand">🔥 Los Pirchas</div>
+      <div class="topbar__spacer"></div>
+      <div class="topbar__mesero">${state.mesero}</div>
+    </div>
+    <div class="screen">
+      <div class="section-title">Salón</div>
+      <div class="table-grid">${SALON.map(tableButton).join('')}</div>
+      <div class="section-title">Para llevar</div>
+      <div class="table-grid">${LLEVAR.map(tableButton).join('')}</div>
+      <div class="section-title">Express</div>
+      <div class="table-grid">${EXPRESS.map(tableButton).join('')}</div>
+    </div>
+  `;
+  root.querySelectorAll('.table-btn').forEach((btn) => {
+    btn.addEventListener('click', () => openTable(btn.dataset.mesa));
+  });
+}
+
+function renderOrder() {
+  const grouped = groupedMenu();
+  const categories = Object.keys(grouped);
+  const activeCat = state.category && grouped[state.category] ? state.category : categories[0];
+  const items = grouped[activeCat] || [];
+
+  root.innerHTML = `
+    <div class="topbar">
+      <button class="topbar__back" id="back-btn">← Mesas</button>
+      <div class="topbar__spacer"></div>
+      <div class="topbar__mesero">${state.mesero}</div>
+    </div>
+    <div class="screen">
+      <div class="order-head">
+        <h1>Mesa ${state.activeMesa}</h1>
+        <span>${state.activeOrderId ? 'Pedido abierto' : 'Pedido nuevo'}</span>
+      </div>
+      ${categories.length === 0
+        ? `<div class="empty-hint">El menú todavía no tiene platos cargados en Firestore.</div>`
+        : `
+        <div class="cat-nav">
+          ${categories.map((c) => `<button class="cat-chip ${c === activeCat ? 'active' : ''}" data-cat="${c}">${c}</button>`).join('')}
+        </div>
+        <div class="item-grid">
+          ${items.map((it) => {
+            const disponible = it.disponible !== false;
+            const inCart = state.draftItems.find((d) => d.nombre === it.nombre);
+            return `
+              <button class="item-card ${!disponible ? 'unavailable' : ''}" data-item='${encodeURIComponent(JSON.stringify(it))}' ${!disponible ? 'disabled' : ''}>
+                ${inCart ? `<span class="item-card__badge">${inCart.qty}</span>` : ''}
+                <div class="item-card__name">${it.nombre}</div>
+                <div class="item-card__price">${fmt(it.precio)}</div>
+              </button>
+            `;
+          }).join('')}
+        </div>
+      `}
+    </div>
+    ${draftCount() > 0 && !state.cartOpen ? `
+      <div class="cart-bar" id="open-cart">
+        <span><span class="count">${draftCount()}</span>Ver pedido</span>
+        <span>${fmt(draftTotal())}</span>
+      </div>
+    ` : ''}
+    ${state.cartOpen ? renderCartSheet() : ''}
+    ${state.toast ? `<div class="toast">${state.toast}</div>` : ''}
+  `;
+
+  document.getElementById('back-btn').addEventListener('click', backToTables);
+  root.querySelectorAll('.cat-chip').forEach((b) => b.addEventListener('click', () => setState({ category: b.dataset.cat })));
+  root.querySelectorAll('.item-card').forEach((b) => {
+    if (b.disabled) return;
+    b.addEventListener('click', () => addToDraft(JSON.parse(decodeURIComponent(b.dataset.item))));
+  });
+  const openCart = document.getElementById('open-cart');
+  if (openCart) openCart.addEventListener('click', () => setState({ cartOpen: true }));
+  bindCartSheetEvents();
+}
+
+function renderCartSheet() {
+  const paymentOptions = [
+    { key: 'efectivo', label: 'Efectivo' },
+    { key: 'sinpe', label: 'SINPE' },
+    { key: 'tarjeta', label: 'Tarjeta' },
+  ];
+  return `
+    <div class="sheet-overlay" id="sheet-overlay">
+      <div class="sheet" id="sheet">
+        <button class="close-x" id="sheet-close">✕</button>
+        <div class="sheet__handle"></div>
+        <h2>Mesa ${state.activeMesa}</h2>
+        ${state.draftItems.length === 0 ? `<div class="empty-hint">Todavía no hay artículos.</div>` : ''}
+        ${state.draftItems.map((i) => `
+          <div class="cart-row">
+            <div class="cart-row__name">${i.nombre}<small>${fmt(i.precio)} c/u</small></div>
+            <div class="qty-ctrl">
+              <button data-dec="${encodeURIComponent(i.nombre)}">−</button>
+              <span>${i.qty}</span>
+              <button data-inc="${encodeURIComponent(i.nombre)}">+</button>
+            </div>
+            <div class="cart-row__sub">${fmt(i.precio * i.qty)}</div>
+          </div>
+        `).join('')}
+        <textarea id="notes-input" placeholder="Notas para cocina (opcional)" rows="2">${state.notes}</textarea>
+        <div class="cart-total"><span>Total</span><span>${fmt(draftTotal())}</span></div>
+
+        ${!state.paying ? `
+          <div class="sheet-actions">
+            <button class="btn-primary" id="send-order" ${state.draftItems.length === 0 || state.saving ? 'disabled' : ''}>
+              ${state.saving ? 'Enviando…' : 'Enviar a cocina'}
+            </button>
+          </div>
+          ${state.activeOrderId ? `
+            <div class="sheet-actions">
+              <button class="btn-ghost" id="go-pay">Cobrar / cerrar mesa</button>
+            </div>
+          ` : ''}
+        ` : `
+          <div class="section-title" style="margin-top:14px">Método de pago</div>
+          <div class="pay-row">
+            ${paymentOptions.map((p) => `<button class="pay-chip ${state.paymentMethod === p.key ? 'active' : ''}" data-pay="${p.key}">${p.label}</button>`).join('')}
+          </div>
+          <div class="sheet-actions">
+            <button class="btn-ghost" id="cancel-pay">Cancelar</button>
+            <button class="btn-primary" id="confirm-pay" ${state.saving ? 'disabled' : ''}>${state.saving ? 'Cerrando…' : `Cobrar ${fmt(draftTotal())}`}</button>
+          </div>
+        `}
+      </div>
+    </div>
+  `;
+}
+
+function bindCartSheetEvents() {
+  const overlay = document.getElementById('sheet-overlay');
+  if (!overlay) return;
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) setState({ cartOpen: false, paying: false }); });
+  document.getElementById('sheet-close').addEventListener('click', () => setState({ cartOpen: false, paying: false }));
+  root.querySelectorAll('[data-inc]').forEach((b) => b.addEventListener('click', () => changeQty(decodeURIComponent(b.dataset.inc), 1)));
+  root.querySelectorAll('[data-dec]').forEach((b) => b.addEventListener('click', () => changeQty(decodeURIComponent(b.dataset.dec), -1)));
+  const notesInput = document.getElementById('notes-input');
+  if (notesInput) notesInput.addEventListener('change', () => setState({ notes: notesInput.value }));
+
+  const sendBtn = document.getElementById('send-order');
+  if (sendBtn) sendBtn.addEventListener('click', sendOrder);
+  const goPay = document.getElementById('go-pay');
+  if (goPay) goPay.addEventListener('click', () => setState({ paying: true }));
+  const cancelPay = document.getElementById('cancel-pay');
+  if (cancelPay) cancelPay.addEventListener('click', () => setState({ paying: false }));
+  const confirmPay = document.getElementById('confirm-pay');
+  if (confirmPay) confirmPay.addEventListener('click', closeTable);
+  root.querySelectorAll('[data-pay]').forEach((b) => b.addEventListener('click', () => setState({ paymentMethod: b.dataset.pay })));
+}
+
+// Primer render
+setState({ screen: state.mesero ? 'tables' : 'login' });
+</script>
+</body>
+</html>
