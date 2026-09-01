@@ -298,15 +298,27 @@ function setState(patch) {
   render();
 }
 
+// Actualiza el estado SIN redibujar la pantalla. Se usa para los datos que llegan
+// en vivo desde Firestore (pedidos de otras mesas, cambios de menú) mientras el
+// mesero está tocando algo en la pantalla de pedido/cobro: si se redibuja todo
+// justo quando el dedo está sobre un botón (ej. "Persona 1" o una unidad de un
+// plato al dividir cuenta), ese botón desaparece a mitad del toque y el tap se
+// pierde. El dato igual queda guardado y se ve reflejado en el próximo redibujo.
+function setStateQuiet(patch) {
+  state = { ...state, ...patch };
+}
+
 // ---------- Firestore listeners ----------
 onSnapshot(collection(db, 'Menu'), (snap) => {
-  setState({ menuItems: snap.docs.map((d) => ({ id: d.id, ...d.data() })) });
+  const menuItems = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  (state.paying ? setStateQuiet : setState)({ menuItems });
 });
 
 onSnapshot(
   query(collection(db, 'orders'), where('mesaAbierta', '==', true)),
   (snap) => {
-    setState({ openOrders: snap.docs.map((d) => ({ id: d.id, ...d.data() })) });
+    const openOrders = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    (state.paying ? setStateQuiet : setState)({ openOrders });
   },
   (err) => console.error('orders listener:', err)
 );
@@ -574,6 +586,14 @@ function logout() {
 
 // ---------- Render ----------
 function render() {
+  // Guardamos el scroll actual para restaurarlo después de redibujar: si no,
+  // cada toque (incluso uno que no tiene nada que ver con el scroll) manda la
+  // pantalla y la hoja de cobro de vuelta arriba del todo.
+  const screenEl = document.querySelector('.screen');
+  const sheetEl = document.getElementById('sheet');
+  const screenScroll = screenEl ? screenEl.scrollTop : null;
+  const sheetScroll = sheetEl ? sheetEl.scrollTop : null;
+
   if (!state.mesero && state.screen !== 'tables') {
     // primera carga
   }
@@ -583,6 +603,15 @@ function render() {
     renderTables();
   } else if (state.screen === 'order') {
     renderOrder();
+  }
+
+  if (screenScroll !== null) {
+    const newScreenEl = document.querySelector('.screen');
+    if (newScreenEl) newScreenEl.scrollTop = screenScroll;
+  }
+  if (sheetScroll !== null) {
+    const newSheetEl = document.getElementById('sheet');
+    if (newSheetEl) newSheetEl.scrollTop = sheetScroll;
   }
 }
 
