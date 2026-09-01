@@ -64,14 +64,31 @@
   .section-title{font-family:var(--font-display);font-size:13px;letter-spacing:.06em;
     text-transform:uppercase;color:var(--ink-400);margin:18px 0 10px;}
   .section-title:first-child{margin-top:0;}
-  .table-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(74px,1fr));gap:8px;}
-  .table-btn{aspect-ratio:1;border-radius:12px;border:1px solid var(--char-700);
-    background:var(--char-900);color:var(--paper);display:flex;flex-direction:column;
-    align-items:center;justify-content:center;gap:2px;font-weight:700;font-size:15px;}
-  .table-btn.free{background:linear-gradient(160deg,#2c4a3a,#1f3428);border-color:#3f9868;}
-  .table-btn.busy{background:linear-gradient(160deg,var(--flame-600),#a12314);border-color:var(--flame-500);}
-  .table-btn small{font-family:var(--font-mono);font-weight:400;font-size:10px;opacity:.85;}
   .empty-hint{color:var(--ink-400);font-size:13px;padding:20px 4px;}
+
+  /* ---- Mapa del salón (distribución física del local) ---- */
+  .fp-legend{display:flex;gap:16px;align-items:center;font-size:12px;color:var(--ink-400);margin:0 0 12px;}
+  .fp-legend span{display:flex;align-items:center;gap:6px;}
+  .fp-legend i{width:12px;height:12px;border-radius:4px;display:inline-block;}
+  .fp-legend i.free{background:linear-gradient(160deg,#2c4a3a,#1f3428);border:1px solid #3f9868;}
+  .fp-legend i.busy{background:linear-gradient(160deg,var(--flame-600),#a12314);border:1px solid var(--flame-500);}
+  .floor-plan-wrap{overflow:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--char-700);
+    border-radius:14px;background:var(--char-900);padding:10px;}
+  .floor-plan{position:relative;width:820px;aspect-ratio:100/62;}
+  .fp-item{position:absolute;border-radius:10px;border:1px solid #3f9868;
+    background:linear-gradient(160deg,#2c4a3a,#1f3428);color:var(--paper);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+    font-weight:700;font-family:var(--font-body);line-height:1.15;text-align:center;padding:2px;}
+  .fp-item.busy{background:linear-gradient(160deg,var(--flame-600),#a12314);border-color:var(--flame-500);}
+  .fp-item small{font-family:var(--font-mono);font-weight:400;opacity:.85;}
+  .fp-item.fp-small{font-size:11px;}
+  .fp-item.fp-small small{font-size:8px;}
+  .fp-item.fp-normal{font-size:14px;}
+  .fp-item.fp-normal small{font-size:10px;}
+  .fp-item.fp-big{font-size:17px;}
+  .fp-item.fp-big small{font-size:11px;}
+  .fp-item.fp-bottom{font-size:12px;border-radius:12px;}
+  .fp-item.fp-bottom small{font-size:10px;}
 
   /* ---- Order screen ---- */
   .order-head{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:12px;}
@@ -172,6 +189,45 @@ const root = document.getElementById('app');
 const SALON = Array.from({ length: 28 }, (_, i) => String(i + 1));
 const LLEVAR = ['Llevar 1', 'Llevar 2'];
 const EXPRESS = ['Express 1', 'Express 2', 'Express 3'];
+
+// Distribución física del salón (coordenadas % dentro del mapa), calcada de la
+// foto del POS que envió el cliente: 3 grupos arriba (1-5 / 6-10 / 11-15),
+// columna vertical a la derecha (16-19), mesas centrales escalonadas
+// (21,23,25,27 arriba / 22,24,26,28 abajo) y la fila de Llevar/Express abajo.
+const FLOORPLAN = {
+  '1':  { left: 2,    top: 3,  width: 6,   height: 11 },
+  '2':  { left: 9.5,  top: 3,  width: 6,   height: 11 },
+  '3':  { left: 17,   top: 3,  width: 6,   height: 11 },
+  '4':  { left: 24.5, top: 3,  width: 6,   height: 11 },
+  '5':  { left: 32,   top: 3,  width: 6,   height: 11 },
+  '6':  { left: 43,   top: 3,  width: 6,   height: 11 },
+  '7':  { left: 50.5, top: 3,  width: 6,   height: 11 },
+  '8':  { left: 58,   top: 3,  width: 6,   height: 11 },
+  '9':  { left: 65.5, top: 3,  width: 6,   height: 11 },
+  '10': { left: 73,   top: 3,  width: 6,   height: 11 },
+  '11': { left: 81,   top: 3,  width: 3,   height: 11, small: true },
+  '12': { left: 84.6, top: 3,  width: 3,   height: 11, small: true },
+  '13': { left: 88.2, top: 3,  width: 3,   height: 11, small: true },
+  '14': { left: 91.8, top: 3,  width: 3,   height: 11, small: true },
+  '15': { left: 95.4, top: 3,  width: 3,   height: 11, small: true },
+  '16': { left: 94,   top: 17, width: 5,   height: 9 },
+  '17': { left: 94,   top: 28, width: 5,   height: 9 },
+  '18': { left: 94,   top: 39, width: 5,   height: 9 },
+  '19': { left: 94,   top: 50, width: 5,   height: 9 },
+  '21': { left: 2,    top: 27, width: 15,  height: 15, big: true },
+  '23': { left: 30,   top: 29, width: 12,  height: 13 },
+  '25': { left: 52,   top: 29, width: 12,  height: 13 },
+  '27': { left: 74,   top: 29, width: 12,  height: 13 },
+  '22': { left: 17,   top: 48, width: 12,  height: 13 },
+  '24': { left: 41,   top: 48, width: 12,  height: 13 },
+  '26': { left: 63,   top: 48, width: 12,  height: 13 },
+  '28': { left: 85,   top: 48, width: 10,  height: 13, small: true },
+  'Llevar 1':  { left: 2,  top: 84, width: 18, height: 12, bottom: true },
+  'Llevar 2':  { left: 22, top: 84, width: 18, height: 12, bottom: true },
+  'Express 1': { left: 42, top: 84, width: 18, height: 12, bottom: true },
+  'Express 2': { left: 62, top: 84, width: 18, height: 12, bottom: true },
+  'Express 3': { left: 82, top: 84, width: 16, height: 12, bottom: true },
+};
 
 let state = {
   mesero: localStorage.getItem('pirchas-mesero') || '',
@@ -373,18 +429,24 @@ function renderLogin() {
   btn.addEventListener('click', () => startMesero(input.value.trim()));
 }
 
-function tableButton(mesa) {
+function floorPlanItem(mesa) {
+  const cfg = FLOORPLAN[mesa];
   const order = findOpenOrder(mesa);
   const busy = !!order;
+  const sizeClass = cfg.big ? 'fp-big' : cfg.bottom ? 'fp-bottom' : cfg.small ? 'fp-small' : 'fp-normal';
+  const label = cfg.bottom ? mesa.toUpperCase() : mesa;
   return `
-    <button class="table-btn ${busy ? 'busy' : 'free'}" data-mesa="${mesa}">
-      ${mesa.replace(/^(Llevar|Express) /, '')}
+    <button class="fp-item ${sizeClass} ${busy ? 'busy' : ''}"
+      style="left:${cfg.left}%;top:${cfg.top}%;width:${cfg.width}%;height:${cfg.height}%;"
+      data-mesa="${mesa}">
+      ${label}
       ${busy ? `<small>${fmt(order.total)}</small>` : ''}
     </button>
   `;
 }
 
 function renderTables() {
+  const items = Object.keys(FLOORPLAN).map(floorPlanItem).join('');
   root.innerHTML = `
     <div class="topbar">
       <div class="topbar__brand">🔥 Los Pirchas</div>
@@ -394,14 +456,16 @@ function renderTables() {
     </div>
     <div class="screen">
       <div class="section-title">Salón</div>
-      <div class="table-grid">${SALON.map(tableButton).join('')}</div>
-      <div class="section-title">Para llevar</div>
-      <div class="table-grid">${LLEVAR.map(tableButton).join('')}</div>
-      <div class="section-title">Express</div>
-      <div class="table-grid">${EXPRESS.map(tableButton).join('')}</div>
+      <div class="fp-legend">
+        <span><i class="free"></i>Libre</span>
+        <span><i class="busy"></i>Ocupada</span>
+      </div>
+      <div class="floor-plan-wrap">
+        <div class="floor-plan">${items}</div>
+      </div>
     </div>
   `;
-  root.querySelectorAll('.table-btn').forEach((btn) => {
+  root.querySelectorAll('.fp-item').forEach((btn) => {
     btn.addEventListener('click', () => openTable(btn.dataset.mesa));
   });
   document.getElementById('logout-btn').addEventListener('click', logout);
