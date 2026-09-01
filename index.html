@@ -153,6 +153,45 @@
   .pay-chip{flex:1;padding:10px;border-radius:10px;border:1px solid var(--char-700);
     background:var(--char-950);color:var(--paper);font-size:13px;font-weight:600;}
   .pay-chip.active{background:linear-gradient(90deg,var(--flame-600),var(--flame-500));border-color:transparent;}
+
+  /* ---- Dividir cuenta ---- */
+  .split-toggle{display:flex;gap:8px;margin:4px 0 16px;background:var(--char-950);
+    border:1px solid var(--char-700);border-radius:12px;padding:4px;}
+  .split-toggle button{flex:1;padding:10px 6px;border-radius:9px;border:none;background:none;
+    color:var(--ink-400);font-weight:700;font-size:12.5px;}
+  .split-toggle button.active{background:linear-gradient(90deg,var(--flame-600),var(--flame-500));color:#fff;}
+  .split-hint{color:var(--ink-400);font-size:12.5px;margin-bottom:10px;line-height:1.4;}
+  .split-warning{color:var(--ember-400);font-size:12.5px;font-weight:600;margin:2px 0 10px;
+    display:flex;align-items:center;gap:6px;}
+  .split-personas{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;}
+  .persona-chip{position:relative;display:flex;flex-direction:column;align-items:flex-start;gap:2px;
+    padding:8px 10px;border-radius:12px;border:2px solid var(--char-700);background:var(--char-950);
+    color:var(--paper);min-width:84px;}
+  .persona-chip .p-name{display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;}
+  .persona-chip .p-dot{width:9px;height:9px;border-radius:50%;flex:0 0 auto;}
+  .persona-chip .p-total{font-family:var(--font-mono);font-size:12px;color:var(--ink-400);}
+  .persona-chip.active{border-color:var(--flame-500);background:var(--char-900);}
+  .persona-chip__remove{position:absolute;top:-7px;right:-7px;width:20px;height:20px;border-radius:50%;
+    background:var(--char-700);color:var(--paper);border:1px solid var(--char-950);font-size:12px;
+    line-height:1;display:flex;align-items:center;justify-content:center;padding:0;}
+  .persona-add{padding:8px 12px;border-radius:12px;border:1px dashed var(--char-700);
+    background:none;color:var(--ink-400);font-size:12.5px;font-weight:700;min-width:84px;}
+  .split-item{padding:10px 0;border-bottom:1px solid var(--char-700);}
+  .split-item__head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;}
+  .split-item__head .name{font-size:13.5px;font-weight:600;}
+  .split-item__head .price{font-family:var(--font-mono);color:var(--ink-400);font-size:12px;}
+  .unit-chips{display:flex;gap:7px;flex-wrap:wrap;}
+  .unit-chip{width:34px;height:34px;border-radius:9px;border:1px solid var(--char-700);
+    background:var(--char-950);color:var(--ink-400);font-family:var(--font-mono);font-weight:700;
+    font-size:12px;display:flex;align-items:center;justify-content:center;}
+  .unit-chip.assigned{color:#fff;border-color:transparent;}
+  .split-summary{margin-top:16px;padding-top:4px;}
+  .persona-pay{margin-bottom:14px;}
+  .persona-pay__row{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;}
+  .persona-pay__name{font-size:13px;font-weight:700;display:flex;align-items:center;gap:7px;}
+  .persona-pay__total{font-family:var(--font-mono);font-size:13px;}
+  .persona-pay .pay-row{margin:0 0 4px;}
+  .persona-pay .pay-chip{font-size:11.5px;padding:7px;}
   .toast{position:fixed;left:50%;top:16px;transform:translateX(-50%);background:var(--status-green);
     color:#fff;padding:10px 18px;border-radius:10px;font-size:13px;font-weight:600;z-index:60;
     box-shadow:0 6px 18px rgba(0,0,0,.35);}
@@ -244,7 +283,15 @@ let state = {
   paymentMethod: 'efectivo',
   saving: false,
   toast: null,
+  // ---- Dividir cuenta ----
+  cobroMode: 'junto',       // 'junto' | 'dividir'
+  splitPersonas: [],        // [{ id, metodo }]
+  splitPersonaSeq: 0,       // contador para ids únicos de persona
+  splitAssignments: {},     // { [nombreDelPlato]: [personaId|null, ...] } por unidad
+  activePersonaId: null,    // persona "activa" para asignar tocando los platos
 };
+
+const PERSONA_COLORS = ['#d9391f', '#3f9868', '#2b6cb0', '#a83279', '#b58900', '#6b46c1', '#0f9b8e', '#c2410c'];
 
 function setState(patch) {
   state = { ...state, ...patch };
@@ -298,11 +345,12 @@ function openTable(mesa) {
     category: null,
     cartOpen: false,
     paying: false,
+    ...resetSplitState(),
   });
 }
 
 function backToTables() {
-  setState({ screen: 'tables', activeMesa: null, activeOrderId: null, draftItems: [], cartOpen: false });
+  setState({ screen: 'tables', activeMesa: null, activeOrderId: null, draftItems: [], cartOpen: false, ...resetSplitState() });
 }
 
 function addToDraft(item) {
@@ -324,6 +372,95 @@ function changeQty(nombre, delta) {
 function setItemNota(nombre, nota) {
   const items = state.draftItems.map((i) => (i.nombre === nombre ? { ...i, nota } : i));
   setState({ draftItems: items });
+}
+
+// ---------- Dividir cuenta: helpers ----------
+function resetSplitState() {
+  return {
+    cobroMode: 'junto',
+    splitPersonas: [],
+    splitPersonaSeq: 0,
+    splitAssignments: {},
+    activePersonaId: null,
+  };
+}
+
+function getAssignments(nombre, qty) {
+  const arr = (state.splitAssignments[nombre] || []).slice(0, qty);
+  while (arr.length < qty) arr.push(null);
+  return arr;
+}
+
+function setCobroMode(mode) {
+  if (mode === 'dividir' && state.splitPersonas.length === 0) {
+    setState({
+      cobroMode: mode,
+      splitPersonas: [{ id: 1, metodo: 'efectivo' }, { id: 2, metodo: 'efectivo' }],
+      splitPersonaSeq: 2,
+      activePersonaId: 1,
+    });
+  } else {
+    setState({ cobroMode: mode });
+  }
+}
+
+function addPersona() {
+  if (state.splitPersonas.length >= 8) {
+    setState({ toast: 'Máximo 8 personas' });
+    setTimeout(() => setState({ toast: null }), 2000);
+    return;
+  }
+  const seq = state.splitPersonaSeq + 1;
+  setState({
+    splitPersonas: [...state.splitPersonas, { id: seq, metodo: 'efectivo' }],
+    splitPersonaSeq: seq,
+    activePersonaId: seq,
+  });
+}
+
+function removePersona(id) {
+  if (state.splitPersonas.length <= 2) {
+    setState({ toast: 'Se necesitan al menos 2 personas' });
+    setTimeout(() => setState({ toast: null }), 2000);
+    return;
+  }
+  const newAssignments = {};
+  Object.keys(state.splitAssignments).forEach((nombre) => {
+    newAssignments[nombre] = state.splitAssignments[nombre].map((pid) => (pid === id ? null : pid));
+  });
+  const newPersonas = state.splitPersonas.filter((p) => p.id !== id);
+  setState({
+    splitPersonas: newPersonas,
+    splitAssignments: newAssignments,
+    activePersonaId: state.activePersonaId === id ? newPersonas[0].id : state.activePersonaId,
+  });
+}
+
+function setPersonaMetodo(id, metodo) {
+  setState({ splitPersonas: state.splitPersonas.map((p) => (p.id === id ? { ...p, metodo } : p)) });
+}
+
+function assignUnit(nombre, qty, idx) {
+  const arr = getAssignments(nombre, qty);
+  const active = state.activePersonaId;
+  arr[idx] = arr[idx] === active ? null : active;
+  setState({ splitAssignments: { ...state.splitAssignments, [nombre]: arr } });
+}
+
+function personaTotal(personaId) {
+  let total = 0;
+  state.draftItems.forEach((it) => {
+    getAssignments(it.nombre, it.qty).forEach((pid) => { if (pid === personaId) total += it.precio; });
+  });
+  return total;
+}
+
+function unassignedCount() {
+  let count = 0;
+  state.draftItems.forEach((it) => {
+    getAssignments(it.nombre, it.qty).forEach((pid) => { if (pid === null) count++; });
+  });
+  return count;
 }
 
 async function sendOrder() {
@@ -371,7 +508,43 @@ async function closeTable() {
       closedAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
-    setState({ saving: false, paying: false, toast: 'Mesa cerrada y cobrada' });
+    setState({ saving: false, paying: false, ...resetSplitState(), toast: 'Mesa cerrada y cobrada' });
+    setTimeout(() => { setState({ toast: null }); backToTables(); }, 1200);
+  } catch (err) {
+    setState({ saving: false, toast: 'Error: ' + err.message });
+    setTimeout(() => setState({ toast: null }), 3000);
+  }
+}
+
+async function closeTableSplit() {
+  if (!state.activeOrderId || state.saving) return;
+  if (unassignedCount() > 0) return;
+  setState({ saving: true });
+  const payments = state.splitPersonas
+    .map((p, idx) => {
+      const monto = personaTotal(p.id);
+      const items = state.draftItems
+        .map((it) => {
+          const qty = getAssignments(it.nombre, it.qty).filter((pid) => pid === p.id).length;
+          return qty > 0 ? { nombre: it.nombre, precio: it.precio, qty } : null;
+        })
+        .filter(Boolean);
+      return { persona: `Persona ${idx + 1}`, metodo: p.metodo, monto, items };
+    })
+    .filter((p) => p.monto > 0);
+  try {
+    await updateDoc(doc(db, 'orders', state.activeOrderId), {
+      status: 'delivered',
+      mesaAbierta: false,
+      paymentMethod: 'dividido',
+      splitPayment: true,
+      payments,
+      total: draftTotal(),
+      items: state.draftItems,
+      closedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    setState({ saving: false, paying: false, ...resetSplitState(), toast: 'Mesa cerrada y cobrada' });
     setTimeout(() => { setState({ toast: null }); backToTables(); }, 1200);
   } catch (err) {
     setState({ saving: false, toast: 'Error: ' + err.message });
@@ -591,16 +764,79 @@ function renderCartSheet() {
             </div>
           ` : ''}
         ` : `
-          <div class="section-title" style="margin-top:14px">Método de pago</div>
-          <div class="pay-row">
-            ${paymentOptions.map((p) => `<button class="pay-chip ${state.paymentMethod === p.key ? 'active' : ''}" data-pay="${p.key}">${p.label}</button>`).join('')}
+          <div class="split-toggle">
+            <button data-mode="junto" class="${state.cobroMode === 'junto' ? 'active' : ''}">Cobrar todo junto</button>
+            <button data-mode="dividir" class="${state.cobroMode === 'dividir' ? 'active' : ''}">Dividir entre varios</button>
           </div>
-          <div class="sheet-actions">
-            <button class="btn-ghost" id="cancel-pay">Cancelar</button>
-            <button class="btn-primary" id="confirm-pay" ${state.saving ? 'disabled' : ''}>${state.saving ? 'Cerrando…' : `Cobrar ${fmt(draftTotal())}`}</button>
-          </div>
+          ${state.cobroMode === 'junto' ? `
+            <div class="section-title" style="margin-top:0">Método de pago</div>
+            <div class="pay-row">
+              ${paymentOptions.map((p) => `<button class="pay-chip ${state.paymentMethod === p.key ? 'active' : ''}" data-pay="${p.key}">${p.label}</button>`).join('')}
+            </div>
+            <div class="sheet-actions">
+              <button class="btn-ghost" id="cancel-pay">Cancelar</button>
+              <button class="btn-primary" id="confirm-pay" ${state.saving ? 'disabled' : ''}>${state.saving ? 'Cerrando…' : `Cobrar ${fmt(draftTotal())}`}</button>
+            </div>
+          ` : renderSplitUI(paymentOptions)}
         `}
       </div>
+    </div>
+  `;
+}
+
+function renderSplitUI(paymentOptions) {
+  const restantes = unassignedCount();
+  return `
+    <div class="split-hint">Elegí quién paga y tocá los platos que le tocan a esa persona.</div>
+    <div class="split-personas">
+      ${state.splitPersonas.map((p, idx) => `
+        <button class="persona-chip ${state.activePersonaId === p.id ? 'active' : ''}" data-persona="${p.id}">
+          ${state.splitPersonas.length > 2 ? `<span class="persona-chip__remove" data-remove-persona="${p.id}">✕</span>` : ''}
+          <span class="p-name"><span class="p-dot" style="background:${PERSONA_COLORS[idx % PERSONA_COLORS.length]}"></span>Persona ${idx + 1}</span>
+          <span class="p-total">${fmt(personaTotal(p.id))}</span>
+        </button>
+      `).join('')}
+      <button class="persona-add" id="add-persona">+ Persona</button>
+    </div>
+    ${restantes > 0 ? `<div class="split-warning">⚠️ Faltan ${restantes} unidad${restantes === 1 ? '' : 'es'} por asignar</div>` : ''}
+    ${state.draftItems.map((it) => {
+      const arr = getAssignments(it.nombre, it.qty);
+      return `
+        <div class="split-item">
+          <div class="split-item__head">
+            <span class="name">${it.nombre}</span>
+            <span class="price">${fmt(it.precio)} c/u</span>
+          </div>
+          <div class="unit-chips">
+            ${arr.map((pid, idx) => {
+              const pIdx = state.splitPersonas.findIndex((p) => p.id === pid);
+              const color = pIdx >= 0 ? PERSONA_COLORS[pIdx % PERSONA_COLORS.length] : '';
+              return `<button class="unit-chip ${pid !== null ? 'assigned' : ''}" style="${pid !== null ? `background:${color}` : ''}"
+                data-unit-nombre="${encodeURIComponent(it.nombre)}" data-unit-qty="${it.qty}" data-unit-idx="${idx}">
+                ${pIdx >= 0 ? pIdx + 1 : '–'}
+              </button>`;
+            }).join('')}
+          </div>
+        </div>
+      `;
+    }).join('')}
+    <div class="split-summary">
+      <div class="section-title" style="margin-top:14px">Método de pago por persona</div>
+      ${state.splitPersonas.map((p, idx) => `
+        <div class="persona-pay">
+          <div class="persona-pay__row">
+            <span class="persona-pay__name"><span class="p-dot" style="background:${PERSONA_COLORS[idx % PERSONA_COLORS.length]}"></span>Persona ${idx + 1}</span>
+            <span class="persona-pay__total">${fmt(personaTotal(p.id))}</span>
+          </div>
+          <div class="pay-row">
+            ${paymentOptions.map((opt) => `<button class="pay-chip ${p.metodo === opt.key ? 'active' : ''}" data-persona-pay="${p.id}" data-persona-pay-method="${opt.key}">${opt.label}</button>`).join('')}
+          </div>
+        </div>
+      `).join('')}
+    </div>
+    <div class="sheet-actions">
+      <button class="btn-ghost" id="cancel-pay">Cancelar</button>
+      <button class="btn-primary" id="confirm-pay-split" ${state.saving || restantes > 0 ? 'disabled' : ''}>${state.saving ? 'Cerrando…' : `Cobrar ${fmt(draftTotal())}`}</button>
     </div>
   `;
 }
@@ -625,6 +861,24 @@ function bindCartSheetEvents() {
   const confirmPay = document.getElementById('confirm-pay');
   if (confirmPay) confirmPay.addEventListener('click', closeTable);
   root.querySelectorAll('[data-pay]').forEach((b) => b.addEventListener('click', () => setState({ paymentMethod: b.dataset.pay })));
+
+  // ---- Dividir cuenta ----
+  root.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => setCobroMode(b.dataset.mode)));
+  const confirmPaySplit = document.getElementById('confirm-pay-split');
+  if (confirmPaySplit) confirmPaySplit.addEventListener('click', closeTableSplit);
+  const addPersonaBtn = document.getElementById('add-persona');
+  if (addPersonaBtn) addPersonaBtn.addEventListener('click', addPersona);
+  root.querySelectorAll('[data-remove-persona]').forEach((b) => b.addEventListener('click', (e) => {
+    e.stopPropagation();
+    removePersona(Number(b.dataset.removePersona));
+  }));
+  root.querySelectorAll('.persona-chip').forEach((b) => b.addEventListener('click', () => setState({ activePersonaId: Number(b.dataset.persona) })));
+  root.querySelectorAll('[data-unit-nombre]').forEach((b) => b.addEventListener('click', () =>
+    assignUnit(decodeURIComponent(b.dataset.unitNombre), Number(b.dataset.unitQty), Number(b.dataset.unitIdx))
+  ));
+  root.querySelectorAll('[data-persona-pay]').forEach((b) => b.addEventListener('click', () =>
+    setPersonaMetodo(Number(b.dataset.personaPay), b.dataset.personaPayMethod)
+  ));
 }
 
 // Primer render
