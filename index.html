@@ -475,6 +475,49 @@ function unassignedCount() {
   return count;
 }
 
+function printReceipt() {
+  if (state.draftItems.length === 0) return;
+  const itemsHtml = state.draftItems
+    .map((i) => `<div class="row"><span>${i.qty} × ${i.nombre}</span><span>${fmt(i.precio * i.qty)}</span></div>`)
+    .join('');
+
+  const html = `<!doctype html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<title>Recibo — Los Pirchas</title>
+<style>
+  body { font-family: -apple-system, sans-serif; color: #241c15; padding: 24px; max-width: 360px; margin: 0 auto; }
+  .center { text-align: center; }
+  h1 { font-size: 18px; margin: 8px 0 2px; }
+  .sub { font-size: 11px; color: #8f7c68; margin-bottom: 14px; }
+  .meta { font-size: 12px; color: #6b5843; margin: 2px 0; }
+  .items { margin: 16px 0; padding: 12px 0; border-top: 1px dashed #c9c0b3; border-bottom: 1px dashed #c9c0b3; }
+  .row { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 6px; }
+  .total { display: flex; justify-content: space-between; font-weight: 700; font-size: 15px; margin-bottom: 4px; }
+  .payment { font-size: 11px; color: #8f7c68; text-align: center; margin-top: 4px; }
+</style>
+</head>
+<body>
+  <div class="center">
+    <h1>Los Pirchas</h1>
+    <p class="sub">Restaurante y Chicharronera</p>
+  </div>
+  <p class="meta center">Mesa ${state.activeMesa} · Mesero: ${state.mesero || ''}</p>
+  <div class="items">${itemsHtml}</div>
+  <div class="total"><span>Total</span><span>${fmt(draftTotal())}</span></div>
+  <p class="payment">${state.paying ? 'Pago: ' + (state.cobroMode === 'dividir' ? 'Dividido' : state.paymentMethod) : ''}</p>
+  <script>window.onload = () => { window.print(); };</script>
+</body>
+</html>`;
+
+  const printWindow = window.open('', '_blank');
+  if (!printWindow) return;
+  printWindow.document.open();
+  printWindow.document.write(html);
+  printWindow.document.close();
+}
+
 async function sendOrder() {
   if (state.draftItems.length === 0 || state.saving) return;
   setState({ saving: true });
@@ -780,6 +823,11 @@ function renderCartSheet() {
         `).join('')}
         <textarea id="notes-input" placeholder="Notas para cocina (opcional)" rows="2">${state.notes}</textarea>
         <div class="cart-total"><span>Total</span><span>${fmt(draftTotal())}</span></div>
+        ${state.draftItems.length > 0 ? `
+          <div class="sheet-actions">
+            <button class="btn-ghost" id="print-receipt">🖨️ Imprimir recibo</button>
+          </div>
+        ` : ''}
 
         ${!state.paying ? `
           <div class="sheet-actions">
@@ -883,6 +931,8 @@ function bindCartSheetEvents() {
 
   const sendBtn = document.getElementById('send-order');
   if (sendBtn) sendBtn.addEventListener('click', sendOrder);
+  const printBtn = document.getElementById('print-receipt');
+  if (printBtn) printBtn.addEventListener('click', printReceipt);
   const goPay = document.getElementById('go-pay');
   if (goPay) goPay.addEventListener('click', () => setState({ paying: true }));
   const cancelPay = document.getElementById('cancel-pay');
