@@ -73,15 +73,20 @@
   .fp-legend i.free{background:linear-gradient(160deg,#2c4a3a,#1f3428);border:1px solid #3f9868;}
   .fp-legend i.busy{background:linear-gradient(160deg,var(--flame-600),#a12314);border:1px solid var(--flame-500);}
   .floor-plan-wrap{overflow:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--char-700);
-    border-radius:14px;background:var(--char-900);padding:10px;}
-  .floor-plan{display:grid;grid-template-columns:repeat(auto-fill,minmax(78px,1fr));gap:10px;}
-  .fp-item{aspect-ratio:1/1;border-radius:10px;border:1px solid #3f9868;
+    border-radius:14px;background:var(--char-900);padding:14px;}
+  .floor-plan{display:flex;flex-direction:column;gap:18px;}
+  .fp-row{display:flex;flex-wrap:wrap;gap:22px;align-items:flex-start;}
+  .fp-row--inner{gap:22px;flex:1;}
+  .fp-cluster{display:flex;flex-wrap:wrap;gap:8px;}
+  .fp-cluster--col{flex-direction:column;}
+  .fp-cluster--right{margin-left:auto;}
+  .fp-item{width:56px;aspect-ratio:1/1;flex:0 0 auto;border-radius:10px;border:1px solid #3f9868;
     background:linear-gradient(160deg,#2c4a3a,#1f3428);color:var(--paper);
     display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
-    font-weight:700;font-family:var(--font-body);font-size:14px;line-height:1.15;
+    font-weight:700;font-family:var(--font-body);font-size:13px;line-height:1.15;
     text-align:center;padding:4px;word-break:break-word;}
   .fp-item.busy{background:linear-gradient(160deg,var(--flame-600),#a12314);border-color:var(--flame-500);}
-  .fp-item small{font-family:var(--font-mono);font-weight:400;opacity:.85;font-size:10px;}
+  .fp-item small{font-family:var(--font-mono);font-weight:400;opacity:.85;font-size:9px;}
 
   /* ---- Order screen ---- */
   .order-head{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:12px;}
@@ -235,12 +240,23 @@ const EXPRESS = ['Express 1', 'Express 2', 'Express 3'];
 // foto del POS que envió el cliente: 3 grupos arriba (1-5 / 6-10 / 11-15),
 // columna vertical a la derecha (16-19), mesas centrales escalonadas
 // (21,23,25,27 arriba / 22,24,26,28 abajo) y la fila de Llevar/Express abajo.
-const MESAS = [
-  '1','2','3','4','5','6','7','8','9','10',
-  '11','12','13','14','15',
-  '16','17','18','19',
-  '21','22','23','24','25','26','27','28',
-  'Llevar 1','Llevar 2','Express 1','Express 2','Express 3',
+// Misma distribución física del salón que el plano original del cliente,
+// organizada por grupos (en vez de coordenadas exactas en %), para que el
+// orden y la agrupación se mantengan sin importar el tamaño de pantalla.
+// Todas las mesas se dibujan como cuadros del mismo tamaño (fp-item).
+const FLOOR_GROUPS = [
+  {
+    row: 'top',
+    clusters: [
+      ['1', '2', '3', '4', '5'],
+      ['6', '7', '8', '9', '10'],
+      ['11', '12', '13', '14', '15'],
+    ],
+    rightCluster: ['16', '17', '18', '19'],
+  },
+  { row: 'mid', clusters: [['21', '23', '25', '27']] },
+  { row: 'mid', clusters: [['22', '24', '26', '28']] },
+  { row: 'bottom', clusters: [['Llevar 1', 'Llevar 2', 'Express 1', 'Express 2', 'Express 3']] },
 ];
 
 let state = {
@@ -693,8 +709,30 @@ function floorPlanItem(mesa) {
   `;
 }
 
+function floorPlanCluster(mesas, extraClass = '') {
+  return `<div class="fp-cluster ${extraClass}">${mesas.map(floorPlanItem).join('')}</div>`;
+}
+
+function floorPlanGroup(group) {
+  if (group.rightCluster) {
+    return `
+      <div class="fp-row fp-row--${group.row}">
+        <div class="fp-row fp-row--inner">
+          ${group.clusters.map((c) => floorPlanCluster(c)).join('')}
+        </div>
+        ${floorPlanCluster(group.rightCluster, 'fp-cluster--col fp-cluster--right')}
+      </div>
+    `;
+  }
+  return `
+    <div class="fp-row fp-row--${group.row}">
+      ${group.clusters.map((c) => floorPlanCluster(c)).join('')}
+    </div>
+  `;
+}
+
 function renderTables() {
-  const items = MESAS.map(floorPlanItem).join('');
+  const items = FLOOR_GROUPS.map(floorPlanGroup).join('');
   root.innerHTML = `
     <div class="topbar">
       <div class="topbar__brand">🔥 Los Pirchas</div>
