@@ -507,7 +507,7 @@ function printReceipt() {
   <div class="items">${itemsHtml}</div>
   <div class="total"><span>Total</span><span>${fmt(draftTotal())}</span></div>
   <p class="payment">${state.paying ? 'Pago: ' + (state.cobroMode === 'dividir' ? 'Dividido' : state.paymentMethod) : ''}</p>
-  <script>window.onload = () => { window.print(); };</script>
+  <script>window.onload = () => { window.print(); };<\/script>
 </body>
 </html>`;
 
