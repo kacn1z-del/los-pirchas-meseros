@@ -203,15 +203,24 @@
     color:#fff;padding:10px 18px;border-radius:10px;font-size:13px;font-weight:600;z-index:60;
     box-shadow:0 6px 18px rgba(0,0,0,.35);}
   .loading{flex:1;display:flex;align-items:center;justify-content:center;color:var(--ink-400);}
+  #offline-banner{
+    display:none;position:fixed;top:0;left:0;right:0;z-index:3000;
+    background:#b45309;color:#fff;text-align:center;font-size:12.5px;
+    font-weight:700;padding:9px 14px;box-shadow:0 2px 10px rgba(0,0,0,.25);
+  }
+  #offline-banner.show{display:block;}
+  #offline-banner.show ~ #app{padding-top:38px;}
 </style>
 </head>
 <body>
+<div id="offline-banner">📡 Sin conexión — los cambios se guardan en el celular y se envían solos cuando vuelva la señal</div>
 <div id="app"><div class="loading">Cargando…</div></div>
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
 import {
-  getFirestore, collection, doc, onSnapshot, addDoc, updateDoc,
+  initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
+  collection, doc, setDoc, onSnapshot, updateDoc,
   serverTimestamp, query, where
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
@@ -226,7 +235,37 @@ const firebaseConfig = {
   measurementId: 'G-QWEN1MWXXZ',
 };
 const app = initializeApp(firebaseConfig);
-const db = getFirestore(app, 'default'); // el proyecto usa el ID de base "default", no "(default)"
+// Caché persistente: guarda los datos en el dispositivo (IndexedDB) para que
+// la app siga funcionando sin internet — se puede seguir viendo el menú, las
+// mesas abiertas, y armar/enviar pedidos nuevos, que quedan en cola y se
+// mandan solos apenas vuelva la señal.
+const db = initializeFirestore(app, {
+  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+}, 'default'); // el proyecto usa el ID de base "default", no "(default)"
+
+// Firestore NO resuelve las promesas de addDoc/setDoc/updateDoc mientras no
+// hay conexión (aunque el dato ya quedó guardado localmente y se manda solo
+// apenas vuelva la señal) — por eso, si estamos offline, no esperamos esa
+// promesa: evita que la pantalla se quede "colgada". Si hay conexión, sí se
+// espera, para detectar errores reales (permisos, etc.) al toque.
+async function writeAndContinue(promise) {
+  if (navigator.onLine) {
+    await promise;
+    return { queued: false };
+  }
+  promise.catch(() => {}); // ya quedó en la cola local; evita "unhandled rejection"
+  return { queued: true };
+}
+
+// Aviso de "sin conexión" — vive fuera del ciclo normal de render() para no
+// depender de él.
+function updateOnlineBanner() {
+  const banner = document.getElementById('offline-banner');
+  if (!banner) return;
+  banner.classList.toggle('show', !navigator.onLine);
+}
+window.addEventListener('online', updateOnlineBanner);
+window.addEventListener('offline', updateOnlineBanner);
 
 // ---------- Utilidades ----------
 const fmt = (v) => `₡${Number(v ?? 0).toLocaleString('es-CR')}`;
@@ -545,14 +584,22 @@ async function sendOrder() {
     updatedAt: serverTimestamp(),
   };
   try {
+    let queued;
     if (state.activeOrderId) {
-      await updateDoc(doc(db, 'orders', state.activeOrderId), payload);
+      ({ queued } = await writeAndContinue(updateDoc(doc(db, 'orders', state.activeOrderId), payload)));
     } else {
-      const ref = await addDoc(collection(db, 'orders'), { ...payload, createdAt: serverTimestamp() });
-      setState({ activeOrderId: ref.id });
+      // Generamos el ID del pedido localmente (no necesita red) para poder
+      // usarlo enseguida, incluso sin conexión.
+      const newRef = doc(collection(db, 'orders'));
+      setState({ activeOrderId: newRef.id });
+      ({ queued } = await writeAndContinue(setDoc(newRef, { ...payload, createdAt: serverTimestamp() })));
     }
-    setState({ saving: false, cartOpen: false, toast: 'Pedido enviado a cocina' });
-    setTimeout(() => setState({ toast: null }), 2200);
+    setState({
+      saving: false,
+      cartOpen: false,
+      toast: queued ? 'Sin conexión — se enviará solo cuando vuelva la señal' : 'Pedido enviado a cocina',
+    });
+    setTimeout(() => setState({ toast: null }), queued ? 3200 : 2200);
   } catch (err) {
     setState({ saving: false, toast: 'Error: ' + err.message });
     setTimeout(() => setState({ toast: null }), 3000);
@@ -563,7 +610,7 @@ async function closeTable() {
   if (!state.activeOrderId || state.saving) return;
   setState({ saving: true });
   try {
-    await updateDoc(doc(db, 'orders', state.activeOrderId), {
+    const { queued } = await writeAndContinue(updateDoc(doc(db, 'orders', state.activeOrderId), {
       status: 'delivered',
       mesaAbierta: false,
       paymentMethod: state.paymentMethod,
@@ -571,9 +618,14 @@ async function closeTable() {
       items: state.draftItems,
       closedAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
+    }));
+    setState({
+      saving: false,
+      paying: false,
+      ...resetSplitState(),
+      toast: queued ? 'Sin conexión — se cerrará solo cuando vuelva la señal' : 'Mesa cerrada y cobrada',
     });
-    setState({ saving: false, paying: false, ...resetSplitState(), toast: 'Mesa cerrada y cobrada' });
-    setTimeout(() => { setState({ toast: null }); backToTables(); }, 1200);
+    setTimeout(() => { setState({ toast: null }); backToTables(); }, queued ? 1800 : 1200);
   } catch (err) {
     setState({ saving: false, toast: 'Error: ' + err.message });
     setTimeout(() => setState({ toast: null }), 3000);
@@ -597,7 +649,7 @@ async function closeTableSplit() {
     })
     .filter((p) => p.monto > 0);
   try {
-    await updateDoc(doc(db, 'orders', state.activeOrderId), {
+    const { queued } = await writeAndContinue(updateDoc(doc(db, 'orders', state.activeOrderId), {
       status: 'delivered',
       mesaAbierta: false,
       paymentMethod: 'dividido',
@@ -607,9 +659,14 @@ async function closeTableSplit() {
       items: state.draftItems,
       closedAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
+    }));
+    setState({
+      saving: false,
+      paying: false,
+      ...resetSplitState(),
+      toast: queued ? 'Sin conexión — se cerrará solo cuando vuelva la señal' : 'Mesa cerrada y cobrada',
     });
-    setState({ saving: false, paying: false, ...resetSplitState(), toast: 'Mesa cerrada y cobrada' });
-    setTimeout(() => { setState({ toast: null }); backToTables(); }, 1200);
+    setTimeout(() => { setState({ toast: null }); backToTables(); }, queued ? 1800 : 1200);
   } catch (err) {
     setState({ saving: false, toast: 'Error: ' + err.message });
     setTimeout(() => setState({ toast: null }), 3000);
@@ -1027,6 +1084,7 @@ function bindCartSheetEvents() {
 }
 
 // Primer render
+updateOnlineBanner();
 setState({ screen: state.mesero ? 'tables' : 'login' });
 </script>
 </body>
