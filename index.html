@@ -533,6 +533,7 @@ async function sendOrder() {
   const payload = {
     mesa: state.activeMesa,
     tipo,
+    origen: 'salon',
     mesero: state.mesero,
     clientName: `Mesa ${state.activeMesa}`,
     restaurantName: 'Los Pirchas',
