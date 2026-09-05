@@ -274,6 +274,31 @@ window.addEventListener('offline', updateOnlineBanner);
 
 // ---------- Utilidades ----------
 const fmt = (v) => `₡${Number(v ?? 0).toLocaleString('es-CR')}`;
+
+function normalizeCategory(text) {
+  return text.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+// Horarios especiales según el menú físico:
+//   Plato Ejecutivo: lunes a viernes, 11 a.m. a 4 p.m.
+//   Noche de Bocas: lunes a jueves, 5 p.m. a 10 p.m.
+// Cualquier otra categoría no tiene restricción de horario.
+function disponibilidadPorHorario(categoria) {
+  const cat = normalizeCategory(categoria);
+  const now = new Date();
+  const dia = now.getDay();
+  const minutos = now.getHours() * 60 + now.getMinutes();
+
+  if (cat === normalizeCategory('Plato Ejecutivo')) {
+    const enHorario = dia >= 1 && dia <= 5 && minutos >= 11 * 60 && minutos < 16 * 60;
+    return { disponible: enHorario, mensaje: 'Disponible lunes a viernes, 11 a.m. a 4 p.m.' };
+  }
+  if (cat === normalizeCategory('Noche de Bocas')) {
+    const enHorario = dia >= 1 && dia <= 4 && minutos >= 17 * 60 && minutos < 22 * 60;
+    return { disponible: enHorario, mensaje: 'Disponible lunes a jueves, 5 p.m. a 10 p.m.' };
+  }
+  return { disponible: true, mensaje: null };
+}
 const root = document.getElementById('app');
 
 const SALON = Array.from({ length: 28 }, (_, i) => String(i + 1));
@@ -876,12 +901,15 @@ function renderOrder() {
         : `
         ${categories.length === 0
           ? `<div class="empty-hint">No se encontraron platos para "${searchTerm}".</div>`
-          : categories.map((cat) => `
+          : categories.map((cat) => {
+            const horario = disponibilidadPorHorario(cat);
+            return `
           <div class="menu-section" id="cat-${slugify(cat)}">
             <div class="menu-section__title">${cat}</div>
+            ${horario.mensaje && !horario.disponible ? `<div class="empty-hint">⏰ ${horario.mensaje}</div>` : ''}
             <div class="item-grid">
               ${grouped[cat].map((it) => {
-                const disponible = it.disponible !== false;
+                const disponible = it.disponible !== false && horario.disponible;
                 const inCart = state.draftItems.find((d) => d.nombre === it.nombre);
                 return `
                   <button class="item-card ${!disponible ? 'unavailable' : ''}" data-item='${encodeURIComponent(JSON.stringify(it))}' ${!disponible ? 'disabled' : ''}>
@@ -893,7 +921,8 @@ function renderOrder() {
               }).join('')}
             </div>
           </div>
-        `).join('')}
+          `;
+          }).join('')}
       `}
     </div>
     ${draftCount() > 0 && !state.cartOpen ? `
