@@ -41,7 +41,7 @@
   .cart-icon-badge{position:absolute;top:-6px;right:-6px;background:var(--flame-600);color:#fff;
     font-size:11px;font-weight:700;border-radius:999px;min-width:18px;height:18px;
     display:flex;align-items:center;justify-content:center;padding:0 4px;}
-  .menu-section{margin-bottom:22px;}
+  .menu-section{margin-bottom:22px;scroll-margin-top:180px;}
   .menu-section__title{font-family:var(--font-display);font-size:15px;font-weight:700;
     color:var(--ember-400);margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--char-700);}
 
@@ -61,6 +61,8 @@
 
   /* ---- Tables screen ---- */
   .screen{flex:1;padding:14px;overflow-y:auto;padding-bottom:90px;}
+  .menu-sticky-head{position:sticky;top:0;z-index:15;background:var(--char-950);
+    margin:-14px -14px 0;padding:14px 14px 2px;}
   .section-title{font-family:var(--font-display);font-size:13px;letter-spacing:.06em;
     text-transform:uppercase;color:var(--ink-400);margin:18px 0 10px;}
   .section-title:first-child{margin-top:0;}
@@ -599,7 +601,7 @@ async function sendOrder() {
       cartOpen: false,
       toast: queued ? 'Sin conexión — se enviará solo cuando vuelva la señal' : 'Pedido enviado a cocina',
     });
-    setTimeout(() => setState({ toast: null }), queued ? 3200 : 2200);
+    setTimeout(() => { setState({ toast: null }); backToTables(); }, queued ? 3200 : 2200);
   } catch (err) {
     setState({ saving: false, toast: 'Error: ' + err.message });
     setTimeout(() => setState({ toast: null }), 3000);
@@ -839,30 +841,34 @@ function renderOrder() {
       </button>
     </div>
     <div class="screen">
-      <div class="order-head">
-        <h1>Mesa ${state.activeMesa}</h1>
-        <span>${state.activeOrderId ? 'Pedido abierto' : 'Pedido nuevo'}</span>
+      <div class="menu-sticky-head">
+        <div class="order-head">
+          <h1>Mesa ${state.activeMesa}</h1>
+          <span>${state.activeOrderId ? 'Pedido abierto' : 'Pedido nuevo'}</span>
+        </div>
+        ${!hasMenu ? '' : `
+          <div class="menu-search-wrap">
+            <input
+              id="menu-search"
+              class="menu-search"
+              type="search"
+              inputmode="search"
+              placeholder="Buscar plato…"
+              value="${state.menuSearch.replace(/"/g, '&quot;')}"
+              autocomplete="off"
+            />
+            ${searchTerm ? `<button class="menu-search__clear" id="menu-search-clear">✕</button>` : ''}
+          </div>
+          ${!searchTerm ? `
+            <div class="cat-nav">
+              ${categories.map((c) => `<button class="cat-chip" data-jump="${slugify(c)}">${c}</button>`).join('')}
+            </div>
+          ` : ''}
+        `}
       </div>
       ${!hasMenu
         ? `<div class="empty-hint">El menú todavía no tiene platos cargados en Firestore.</div>`
         : `
-        <div class="menu-search-wrap">
-          <input
-            id="menu-search"
-            class="menu-search"
-            type="search"
-            inputmode="search"
-            placeholder="Buscar plato…"
-            value="${state.menuSearch.replace(/"/g, '&quot;')}"
-            autocomplete="off"
-          />
-          ${searchTerm ? `<button class="menu-search__clear" id="menu-search-clear">✕</button>` : ''}
-        </div>
-        ${!searchTerm ? `
-          <div class="cat-nav">
-            ${categories.map((c) => `<button class="cat-chip" data-jump="${slugify(c)}">${c}</button>`).join('')}
-          </div>
-        ` : ''}
         ${categories.length === 0
           ? `<div class="empty-hint">No se encontraron platos para "${searchTerm}".</div>`
           : categories.map((cat) => `
