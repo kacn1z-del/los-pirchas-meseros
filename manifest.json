@@ -1,0 +1,16 @@
+{
+  "name": "Los Pirchas — Meseros",
+  "short_name": "Pirchas Meseros",
+  "description": "Toma de pedidos, cobro y cierre de mesas para meseros de Los Pirchas.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#171310",
+  "theme_color": "#171310",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
