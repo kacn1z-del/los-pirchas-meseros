@@ -4,6 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <title>Los Pirchas — Meseros</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#171310">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Pirchas Meseros">
 <style>
   :root{
     --char-950:#171310; --char-900:#221b16; --char-700:#3a2c22;
@@ -215,10 +221,26 @@
   }
   #offline-banner.show{display:block;}
   #offline-banner.show ~ #app{padding-top:38px;}
+  #install-banner{
+    display:none;position:fixed;top:0;left:0;right:0;z-index:2900;
+    background:var(--char-950);color:var(--paper);font-size:12.5px;
+    padding:9px 12px;box-shadow:0 2px 10px rgba(0,0,0,.25);
+    align-items:center;gap:8px;
+  }
+  #install-banner.show{display:flex;}
+  #install-banner.show ~ #app{padding-top:40px;}
+  #install-banner span{flex:1;line-height:1.4;}
+  #install-banner button{border:none;border-radius:999px;font-weight:700;cursor:pointer;}
+  #install-banner .install-btn{
+    background:linear-gradient(90deg,var(--flame-600),var(--flame-500));color:#fff;
+    padding:6px 12px;font-size:12px;white-space:nowrap;
+  }
+  #install-banner .close-btn{background:none;color:var(--paper-dim);font-size:14px;padding:4px;flex:0 0 auto;}
 </style>
 </head>
 <body>
 <div id="offline-banner">📡 Sin conexión — los cambios se guardan en el celular y se envían solos cuando vuelva la señal</div>
+<div id="install-banner"></div>
 <div id="app"><div class="loading">Cargando…</div></div>
 
 <script type="module">
@@ -271,6 +293,54 @@ function updateOnlineBanner() {
 }
 window.addEventListener('online', updateOnlineBanner);
 window.addEventListener('offline', updateOnlineBanner);
+
+// ---------- Instalar como app ----------
+// Mismo criterio que en el admin y la página de clientes: en Android/Chrome
+// se puede ofrecer un botón que instala directo; en iPhone (Safari) no
+// existe ese evento, así que se muestra el instructivo de "Compartir →
+// Agregar a pantalla de inicio" directamente.
+(function () {
+  const yaInstalada =
+    window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+  if (yaInstalada) return;
+  if (localStorage.getItem('pirchas-install-dismissed') === '1') return;
+
+  const banner = document.getElementById('install-banner');
+  if (!banner) return;
+
+  function mostrar(html) {
+    banner.innerHTML = html + '<button class="close-btn" id="install-close">✕</button>';
+    banner.classList.add('show');
+    document.getElementById('install-close').onclick = () => {
+      localStorage.setItem('pirchas-install-dismissed', '1');
+      banner.classList.remove('show');
+    };
+  }
+
+  let deferredPrompt = null;
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    mostrar('<span>📲 Instalá Pirchas Meseros en este dispositivo</span><button class="install-btn" id="install-btn">Instalar</button>');
+    document.getElementById('install-btn').onclick = async () => {
+      deferredPrompt.prompt();
+      await deferredPrompt.userChoice;
+      deferredPrompt = null;
+      banner.classList.remove('show');
+    };
+  });
+
+  const esIOS = /iphone|ipad|ipod/i.test(window.navigator.userAgent);
+  if (esIOS) {
+    mostrar('<span>📲 Para instalar: tocá <strong>Compartir</strong> y después <strong>"Agregar a pantalla de inicio"</strong>.</span>');
+  }
+})();
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  });
+}
 
 // ---------- Utilidades ----------
 const fmt = (v) => `₡${Number(v ?? 0).toLocaleString('es-CR')}`;
