@@ -53,6 +53,9 @@
   .menu-section{margin-bottom:22px;scroll-margin-top:180px;}
   .menu-section__title{font-family:var(--font-display);font-size:15px;font-weight:700;
     color:var(--ember-400);margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--char-700);}
+  .menu-subcategory{font-family:var(--font-display);font-size:12.5px;font-weight:700;
+    color:var(--ember-400);margin:14px 0 8px;padding-bottom:4px;border-bottom:1px solid var(--char-700);}
+  .menu-subcategory:first-child{margin-top:0;}
 
   /* ---- Login screen ---- */
   .login{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
@@ -402,6 +405,7 @@ let state = {
   mesero: localStorage.getItem('pirchas-mesero') || '',
   screen: 'login',        // login | tables | order
   menuItems: [],
+  categoryOrder: [],       // orden guardado por el admin en Config/categoryOrder
   openOrders: [],          // pedidos con mesaAbierta === true
   activeMesa: null,
   activeOrderId: null,     // id del pedido abierto de esa mesa (si existe)
@@ -445,6 +449,17 @@ onSnapshot(collection(db, 'Menu'), (snap) => {
   (state.paying ? setStateQuiet : setState)({ menuItems });
 });
 
+// Orden de categorías guardado por el admin (panel > Orden de categorías).
+// Si todavía no guardó ninguno, se usa CATEGORY_ORDER como antes.
+onSnapshot(
+  doc(db, 'Config', 'categoryOrder'),
+  (snap) => {
+    const categoryOrder = snap.exists() && Array.isArray(snap.data().orden) ? snap.data().orden : [];
+    (state.paying ? setStateQuiet : setState)({ categoryOrder });
+  },
+  (err) => console.error('categoryOrder listener:', err)
+);
+
 onSnapshot(
   query(collection(db, 'orders'), where('mesaAbierta', '==', true)),
   (snap) => {
@@ -477,11 +492,97 @@ function normalizeText(text) {
     .replace(/[\u0300-\u036f]/g, '');
 }
 
+// Mismo orden por defecto que usa el sitio del cliente (los-pirchas-cliente
+// src/components/Menu.jsx). Si el admin guardó un orden propio en
+// Config/categoryOrder, ese manda; si no, se usa este.
+const CATEGORY_ORDER = [
+  'Menú infantil',
+  'Especialidades Mexicanas',
+  'Bebidas',
+  'Batidos en agua',
+  'Batidos en leche',
+  'Bebidas calientes',
+  'Otras Especialidades',
+  'Para Compartir',
+  'Entradas calientes',
+  'Arroces',
+  'Pastas',
+  'Casados con',
+  'Cortes especiales',
+  'Hamburguesas',
+  'Plato Ejecutivo',
+  'Noche de Bocas',
+];
+
+// Orden de subcategorías dentro de una categoría (mismo criterio que el
+// sitio del cliente). Cualquier subcategoría no listada va al final.
+const SUBCATEGORY_ORDER = {
+  'bebidas calientes': ['Café', 'Té', 'Aguadulce', 'Chocolate'],
+};
+
+function sortCategories(categories, customOrder) {
+  const base = customOrder && customOrder.length > 0 ? customOrder : CATEGORY_ORDER;
+  const priority = base.map(normalizeText);
+  return [...categories].sort((a, b) => {
+    const ia = priority.indexOf(normalizeText(a));
+    const ib = priority.indexOf(normalizeText(b));
+    if (ia === -1 && ib === -1) return 0;
+    if (ia === -1) return 1;
+    if (ib === -1) return -1;
+    return ia - ib;
+  });
+}
+
+// Agrupa los platos de una categoría por subcategoría, igual que el sitio
+// del cliente. Si ningún plato de la categoría tiene subcategoría, devuelve
+// un solo grupo sin encabezado (mismo comportamiento que antes).
+function groupBySubcategoria(categoria, platos) {
+  const tieneSubcategorias = platos.some((p) => p.subcategoria);
+  if (!tieneSubcategorias) return [{ subcategoria: null, platos }];
+
+  const orden = SUBCATEGORY_ORDER[normalizeText(categoria)] || [];
+  const ordenNormalizado = orden.map(normalizeText);
+
+  const grupos = new Map();
+  platos.forEach((p) => {
+    const key = p.subcategoria || '';
+    if (!grupos.has(key)) grupos.set(key, []);
+    grupos.get(key).push(p);
+  });
+
+  const entries = [...grupos.entries()];
+  entries.sort(([a], [b]) => {
+    if (a === '' && b === '') return 0;
+    if (a === '') return -1;
+    if (b === '') return 1;
+    const ia = ordenNormalizado.indexOf(normalizeText(a));
+    const ib = ordenNormalizado.indexOf(normalizeText(b));
+    if (ia === -1 && ib === -1) return a.localeCompare(b);
+    if (ia === -1) return 1;
+    if (ib === -1) return -1;
+    return ia - ib;
+  });
+
+  return entries.map(([subcategoria, items]) => ({ subcategoria: subcategoria || null, platos: items }));
+}
+
+// Mismos alias que usa el sitio del cliente: si buscan "bebidas" (o
+// cualquiera de estas palabras "paraguas"), también deben salir las
+// categorías más específicas que tengan que ver con bebidas, aunque no se
+// llamen literalmente "bebidas" (ej. "Batidos en agua", "Bebidas calientes").
+const BEBIDA_ALIASES = ['bebida', 'batido', 'gaseosa', 'cerveza', 'licor', 'jugo', 'smoothie', 'cafe', 'helado', 'refresco'];
+
 function filteredMenuItems() {
   const term = normalizeText(state.menuSearch).trim();
   if (!term) return state.menuItems;
   return state.menuItems.filter((it) => {
-    return normalizeText(it.nombre).includes(term) || normalizeText(it.categoria).includes(term);
+    const nombre = normalizeText(it.nombre);
+    const categoria = normalizeText(it.categoria);
+    if (nombre.includes(term) || categoria.includes(term)) return true;
+    if (BEBIDA_ALIASES.some((alias) => alias.includes(term) || term.includes(alias))) {
+      return BEBIDA_ALIASES.some((alias) => categoria.includes(alias));
+    }
+    return false;
   });
 }
 
@@ -928,7 +1029,7 @@ function slugify(text) {
 function renderOrder() {
   const searchTerm = state.menuSearch.trim();
   const grouped = groupedMenu(filteredMenuItems());
-  const categories = Object.keys(grouped);
+  const categories = sortCategories(Object.keys(grouped), state.categoryOrder);
   const hasMenu = state.menuItems.length > 0;
 
   root.innerHTML = `
@@ -973,23 +1074,27 @@ function renderOrder() {
           ? `<div class="empty-hint">No se encontraron platos para "${searchTerm}".</div>`
           : categories.map((cat) => {
             const horario = disponibilidadPorHorario(cat);
+            const grupos = groupBySubcategoria(cat, grouped[cat]);
             return `
           <div class="menu-section" id="cat-${slugify(cat)}">
             <div class="menu-section__title">${cat}</div>
             ${horario.mensaje && !horario.disponible ? `<div class="empty-hint">⏰ ${horario.mensaje}</div>` : ''}
-            <div class="item-grid">
-              ${grouped[cat].map((it) => {
-                const disponible = it.disponible !== false && horario.disponible;
-                const inCart = state.draftItems.find((d) => d.nombre === it.nombre);
-                return `
-                  <button class="item-card ${!disponible ? 'unavailable' : ''}" data-item='${encodeURIComponent(JSON.stringify(it))}' ${!disponible ? 'disabled' : ''}>
-                    ${inCart ? `<span class="item-card__badge">${inCart.qty}</span>` : ''}
-                    <div class="item-card__name">${it.nombre}</div>
-                    <div class="item-card__price">${fmt(it.precio)}</div>
-                  </button>
-                `;
-              }).join('')}
-            </div>
+            ${grupos.map((grupo) => `
+              ${grupo.subcategoria ? `<div class="menu-subcategory">${grupo.subcategoria}</div>` : ''}
+              <div class="item-grid">
+                ${grupo.platos.map((it) => {
+                  const disponible = it.disponible !== false && horario.disponible;
+                  const inCart = state.draftItems.find((d) => d.nombre === it.nombre);
+                  return `
+                    <button class="item-card ${!disponible ? 'unavailable' : ''}" data-item='${encodeURIComponent(JSON.stringify(it))}' ${!disponible ? 'disabled' : ''}>
+                      ${inCart ? `<span class="item-card__badge">${inCart.qty}</span>` : ''}
+                      <div class="item-card__name">${it.nombre}</div>
+                      <div class="item-card__price">${fmt(it.precio)}</div>
+                    </button>
+                  `;
+                }).join('')}
+              </div>
+            `).join('')}
           </div>
           `;
           }).join('')}
