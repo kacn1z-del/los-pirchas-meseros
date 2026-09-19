@@ -412,6 +412,7 @@ let state = {
   openOrders: [],          // pedidos con mesaAbierta === true
   activeMesa: null,
   activeOrderId: null,     // id del pedido abierto de esa mesa (si existe)
+  pedidoExistente: null,   // el pedido completo tal como estaba al abrir la mesa (para calcular qué es nuevo al reenviar)
   draftItems: [],          // {nombre, precio, qty}
   notes: '',
   category: null,
@@ -603,6 +604,7 @@ function openTable(mesa) {
     screen: 'order',
     activeMesa: mesa,
     activeOrderId: existing ? existing.id : null,
+    pedidoExistente: existing || null,
     draftItems: existing ? existing.items.map((i) => ({ ...i })) : [],
     notes: existing ? (existing.notes || '') : '',
     category: null,
@@ -771,6 +773,25 @@ function printReceipt() {
   printWindow.document.close();
 }
 
+// Compara lo que ya estaba pedido (existingItems, de antes de abrir esta
+// mesa) contra el carrito actual (draftItems, que el mesero puede haber
+// editado libremente) y devuelve solo la parte NUEVA — lo que hay que
+// mandar a cocina/bebidas como una ronda aparte, sin repetirles lo que ya
+// habían recibido antes. Se compara por nombre (misma clave que usa el
+// resto del carrito de meseros) y por diferencia de cantidad; si algo baja
+// de cantidad o se quita, eso no genera ronda (bajar cantidades se resuelve
+// hablando directo con cocina, no reenviando).
+function calcularRondaNueva(existingItems, draftItems) {
+  const nuevos = [];
+  for (const item of draftItems) {
+    const anterior = (existingItems || []).find((e) => e.nombre === item.nombre);
+    const qtyAnterior = anterior ? anterior.qty : 0;
+    const diff = item.qty - qtyAnterior;
+    if (diff > 0) nuevos.push({ ...item, qty: diff });
+  }
+  return nuevos;
+}
+
 async function sendOrder() {
   if (state.draftItems.length === 0 || state.saving) return;
   setState({ saving: true });
@@ -782,7 +803,7 @@ async function sendOrder() {
     mesero: state.mesero,
     clientName: `Mesa ${state.activeMesa}`,
     restaurantName: 'Los Pirchas',
-    items: state.draftItems,
+    items: state.draftItems, // total acumulado de la mesa — esto es lo que ve/cobra el admin
     total: draftTotal(),
     notes: state.notes.trim() || null,
     status: 'pending',
@@ -792,8 +813,25 @@ async function sendOrder() {
   try {
     let queued;
     if (state.activeOrderId) {
+      const existente = state.pedidoExistente;
+      // Si el pedido ya traía "rondas" (se le agregó algo antes de este
+      // envío) se respetan tal cual, con su comidaLista/bebidaLista propios
+      // sin tocar. Si es la primera vez que este pedido se reabre después
+      // de este cambio, se arma una ronda "r0" con lo que ya tenía, usando
+      // el estado comidaLista/bebidaLista que tuviera a nivel de pedido —
+      // así no se pierde el progreso que cocina/bebidas ya habían marcado.
+      const rondasPrevias = Array.isArray(existente?.rondas) && existente.rondas.length > 0
+        ? existente.rondas
+        : (existente?.items?.length
+            ? [{ id: 'r0', items: existente.items, comidaLista: !!existente.comidaLista, bebidaLista: !!existente.bebidaLista }]
+            : []);
+      const itemsNuevos = calcularRondaNueva(existente?.items, state.draftItems);
+      payload.rondas = itemsNuevos.length > 0
+        ? [...rondasPrevias, { id: `r${Date.now()}`, items: itemsNuevos, comidaLista: false, bebidaLista: false }]
+        : rondasPrevias;
       ({ queued } = await writeAndContinue(updateDoc(doc(db, 'orders', state.activeOrderId), payload)));
     } else {
+      payload.rondas = [{ id: `r${Date.now()}`, items: state.draftItems, comidaLista: false, bebidaLista: false }];
       // Generamos el ID del pedido localmente (no necesita red) para poder
       // usarlo enseguida, incluso sin conexión.
       const newRef = doc(collection(db, 'orders'));
