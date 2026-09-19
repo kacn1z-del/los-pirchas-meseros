@@ -620,7 +620,7 @@ function addToDraft(item) {
   const items = [...state.draftItems];
   const idx = items.findIndex((i) => i.nombre === item.nombre);
   if (idx >= 0) items[idx] = { ...items[idx], qty: items[idx].qty + 1 };
-  else items.push({ nombre: item.nombre, precio: item.precio, qty: 1, nota: '' });
+  else items.push({ nombre: item.nombre, precio: item.precio, categoria: item.categoria || null, qty: 1, nota: '' });
   setState({ draftItems: items });
 }
 
