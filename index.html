@@ -820,18 +820,21 @@ async function sendOrder() {
       // de este cambio, se arma una ronda "r0" con lo que ya tenía, usando
       // el estado comidaLista/bebidaLista que tuviera a nivel de pedido —
       // así no se pierde el progreso que cocina/bebidas ya habían marcado.
+      // creadaEn usa la hora de creación del pedido original (o ahora mismo
+      // si no hay ninguna), para que esta ronda "vieja" siga ordenándose
+      // donde le corresponde cronológicamente, antes que la ronda nueva.
       const rondasPrevias = Array.isArray(existente?.rondas) && existente.rondas.length > 0
         ? existente.rondas
         : (existente?.items?.length
-            ? [{ id: 'r0', items: existente.items, comidaLista: !!existente.comidaLista, bebidaLista: !!existente.bebidaLista }]
+            ? [{ id: 'r0', items: existente.items, comidaLista: !!existente.comidaLista, bebidaLista: !!existente.bebidaLista, creadaEn: existente.createdAt || Date.now() }]
             : []);
       const itemsNuevos = calcularRondaNueva(existente?.items, state.draftItems);
       payload.rondas = itemsNuevos.length > 0
-        ? [...rondasPrevias, { id: `r${Date.now()}`, items: itemsNuevos, comidaLista: false, bebidaLista: false }]
+        ? [...rondasPrevias, { id: `r${Date.now()}`, items: itemsNuevos, comidaLista: false, bebidaLista: false, creadaEn: Date.now() }]
         : rondasPrevias;
       ({ queued } = await writeAndContinue(updateDoc(doc(db, 'orders', state.activeOrderId), payload)));
     } else {
-      payload.rondas = [{ id: `r${Date.now()}`, items: state.draftItems, comidaLista: false, bebidaLista: false }];
+      payload.rondas = [{ id: `r${Date.now()}`, items: state.draftItems, comidaLista: false, bebidaLista: false, creadaEn: Date.now() }];
       // Generamos el ID del pedido localmente (no necesita red) para poder
       // usarlo enseguida, incluso sin conexión.
       const newRef = doc(collection(db, 'orders'));
