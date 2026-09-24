@@ -773,23 +773,60 @@ function printReceipt() {
   printWindow.document.close();
 }
 
-// Compara lo que ya estaba pedido (existingItems, de antes de abrir esta
-// mesa) contra el carrito actual (draftItems, que el mesero puede haber
-// editado libremente) y devuelve solo la parte NUEVA — lo que hay que
-// mandar a cocina/bebidas como una ronda aparte, sin repetirles lo que ya
-// habían recibido antes. Se compara por nombre (misma clave que usa el
-// resto del carrito de meseros) y por diferencia de cantidad; si algo baja
-// de cantidad o se quita, eso no genera ronda (bajar cantidades se resuelve
-// hablando directo con cocina, no reenviando).
-function calcularRondaNueva(existingItems, draftItems) {
-  const nuevos = [];
-  for (const item of draftItems) {
-    const anterior = (existingItems || []).find((e) => e.nombre === item.nombre);
-    const qtyAnterior = anterior ? anterior.qty : 0;
-    const diff = item.qty - qtyAnterior;
-    if (diff > 0) nuevos.push({ ...item, qty: diff });
-  }
-  return nuevos;
+// Compara lo que ya estaba pedido (rondasPrevias, tal como quedaron
+// guardadas) contra el carrito actual (draftItems, que el mesero puede
+// haber editado libremente — subiendo, bajando o quitando cosas) y separa
+// dos cosas:
+//   - Lo que subió de cantidad respecto a lo que había → se devuelve como
+//     "itemsNuevos", para mandarlo como una ronda aparte a cocina/bebidas.
+//   - Lo que bajó o se quitó → se resta directo de las rondas existentes,
+//     PERO SOLO de las que todavía no están "iniciadas" (nadie empezó a
+//     prepararlas). Si algo que se quiso bajar/quitar está en una ronda ya
+//     iniciada, no se toca esa parte — se deja como estaba, y se informa en
+//     "bloqueados" para avisarle al mesero.
+// Se compara por nombre (misma clave que usa el resto del carrito de
+// meseros).
+function sincronizarRondas(rondasPrevias, draftItems) {
+  const rondas = rondasPrevias.map((r) => ({ ...r, items: r.items.map((i) => ({ ...i })) }));
+
+  const totalEnRondas = new Map();
+  rondas.forEach((r) => r.items.forEach((i) => {
+    totalEnRondas.set(i.nombre, (totalEnRondas.get(i.nombre) || 0) + i.qty);
+  }));
+
+  const draftPorNombre = new Map(draftItems.map((i) => [i.nombre, i]));
+  const nombres = new Set([...draftPorNombre.keys(), ...totalEnRondas.keys()]);
+
+  const itemsNuevos = [];
+  const bloqueados = [];
+
+  nombres.forEach((nombre) => {
+    const deseado = draftPorNombre.get(nombre)?.qty || 0;
+    const actual = totalEnRondas.get(nombre) || 0;
+    const diff = deseado - actual;
+
+    if (diff > 0) {
+      itemsNuevos.push({ ...draftPorNombre.get(nombre), qty: diff });
+      return;
+    }
+    if (diff < 0) {
+      let porQuitar = -diff;
+      for (const r of rondas) {
+        if (porQuitar <= 0) break;
+        if (r.iniciada) continue; // no se toca lo que ya está en preparación
+        const idx = r.items.findIndex((i) => i.nombre === nombre);
+        if (idx === -1) continue;
+        const aQuitar = Math.min(r.items[idx].qty, porQuitar);
+        r.items[idx].qty -= aQuitar;
+        porQuitar -= aQuitar;
+      }
+      if (porQuitar > 0) bloqueados.push(nombre);
+    }
+  });
+
+  rondas.forEach((r) => { r.items = r.items.filter((i) => i.qty > 0); });
+
+  return { rondas, itemsNuevos, bloqueados };
 }
 
 async function sendOrder() {
@@ -812,26 +849,30 @@ async function sendOrder() {
   };
   try {
     let queued;
+    let avisoBloqueo = null;
     if (state.activeOrderId) {
       const existente = state.pedidoExistente;
       // Si el pedido ya traía "rondas" (se le agregó algo antes de este
       // envío) se respetan tal cual, con su comidaLista/bebidaLista propios
       // sin tocar. Si es la primera vez que este pedido se reabre después
       // de este cambio, se arma una ronda "r0" con lo que ya tenía, usando
-      // el estado comidaLista/bebidaLista que tuviera a nivel de pedido —
-      // así no se pierde el progreso que cocina/bebidas ya habían marcado.
-      // creadaEn usa la hora de creación del pedido original (o ahora mismo
-      // si no hay ninguna), para que esta ronda "vieja" siga ordenándose
-      // donde le corresponde cronológicamente, antes que la ronda nueva.
+      // el estado comidaLista/bebidaLista/iniciada que tuviera a nivel de
+      // pedido — así no se pierde el progreso que cocina/bebidas ya habían
+      // marcado. creadaEn usa la hora de creación del pedido original (o
+      // ahora mismo si no hay ninguna), para que esta ronda "vieja" siga
+      // ordenándose donde le corresponde cronológicamente.
       const rondasPrevias = Array.isArray(existente?.rondas) && existente.rondas.length > 0
         ? existente.rondas
         : (existente?.items?.length
             ? [{ id: 'r0', items: existente.items, comidaLista: !!existente.comidaLista, bebidaLista: !!existente.bebidaLista, iniciada: existente.status !== 'pending', creadaEn: existente.createdAt || Date.now() }]
             : []);
-      const itemsNuevos = calcularRondaNueva(existente?.items, state.draftItems);
+      const { rondas: rondasActualizadas, itemsNuevos, bloqueados } = sincronizarRondas(rondasPrevias, state.draftItems);
       payload.rondas = itemsNuevos.length > 0
-        ? [...rondasPrevias, { id: `r${Date.now()}`, items: itemsNuevos, comidaLista: false, bebidaLista: false, iniciada: false, creadaEn: Date.now() }]
-        : rondasPrevias;
+        ? [...rondasActualizadas, { id: `r${Date.now()}`, items: itemsNuevos, comidaLista: false, bebidaLista: false, iniciada: false, creadaEn: Date.now() }]
+        : rondasActualizadas;
+      if (bloqueados.length > 0) {
+        avisoBloqueo = `⚠️ ${bloqueados.join(', ')} ya se está preparando — no se pudo quitar desde acá, avisale directo a cocina/bebidas si hace falta cambiarlo.`;
+      }
       ({ queued } = await writeAndContinue(updateDoc(doc(db, 'orders', state.activeOrderId), payload)));
     } else {
       payload.rondas = [{ id: `r${Date.now()}`, items: state.draftItems, comidaLista: false, bebidaLista: false, iniciada: false, creadaEn: Date.now() }];
@@ -844,9 +885,9 @@ async function sendOrder() {
     setState({
       saving: false,
       cartOpen: false,
-      toast: queued ? 'Sin conexión — se enviará solo cuando vuelva la señal' : 'Pedido enviado a cocina',
+      toast: avisoBloqueo || (queued ? 'Sin conexión — se enviará solo cuando vuelva la señal' : 'Pedido enviado a cocina'),
     });
-    setTimeout(() => { setState({ toast: null }); backToTables(); }, queued ? 3200 : 2200);
+    setTimeout(() => { setState({ toast: null }); backToTables(); }, avisoBloqueo ? 4500 : (queued ? 3200 : 2200));
   } catch (err) {
     setState({ saving: false, toast: 'Error: ' + err.message });
     setTimeout(() => setState({ toast: null }), 3000);
