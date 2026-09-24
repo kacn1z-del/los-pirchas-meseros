@@ -826,15 +826,15 @@ async function sendOrder() {
       const rondasPrevias = Array.isArray(existente?.rondas) && existente.rondas.length > 0
         ? existente.rondas
         : (existente?.items?.length
-            ? [{ id: 'r0', items: existente.items, comidaLista: !!existente.comidaLista, bebidaLista: !!existente.bebidaLista, creadaEn: existente.createdAt || Date.now() }]
+            ? [{ id: 'r0', items: existente.items, comidaLista: !!existente.comidaLista, bebidaLista: !!existente.bebidaLista, iniciada: existente.status !== 'pending', creadaEn: existente.createdAt || Date.now() }]
             : []);
       const itemsNuevos = calcularRondaNueva(existente?.items, state.draftItems);
       payload.rondas = itemsNuevos.length > 0
-        ? [...rondasPrevias, { id: `r${Date.now()}`, items: itemsNuevos, comidaLista: false, bebidaLista: false, creadaEn: Date.now() }]
+        ? [...rondasPrevias, { id: `r${Date.now()}`, items: itemsNuevos, comidaLista: false, bebidaLista: false, iniciada: false, creadaEn: Date.now() }]
         : rondasPrevias;
       ({ queued } = await writeAndContinue(updateDoc(doc(db, 'orders', state.activeOrderId), payload)));
     } else {
-      payload.rondas = [{ id: `r${Date.now()}`, items: state.draftItems, comidaLista: false, bebidaLista: false, creadaEn: Date.now() }];
+      payload.rondas = [{ id: `r${Date.now()}`, items: state.draftItems, comidaLista: false, bebidaLista: false, iniciada: false, creadaEn: Date.now() }];
       // Generamos el ID del pedido localmente (no necesita red) para poder
       // usarlo enseguida, incluso sin conexión.
       const newRef = doc(collection(db, 'orders'));
