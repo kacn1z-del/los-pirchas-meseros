@@ -352,6 +352,24 @@ function normalizeCategory(text) {
   return text.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
 
+// Misma lista de palabras clave que src/lib/categoriasBebida.js en el
+// admin — se usa acá para saber, al sincronizar rondas, si un ítem que se
+// está por quitar es de comida o de bebida, y así chequear el campo de
+// "iniciada" correcto (comidaIniciada o bebidaIniciada) antes de tocarlo.
+const PALABRAS_CLAVE_BEBIDA = [
+  'bebida', 'bebidas', 'batido', 'batidos', 'gaseosa', 'gaseosas',
+  'refresco', 'refrescos', 'cerveza', 'cervezas', 'licor', 'licores',
+  'jugo', 'jugos', 'cafe', 'te', 'chocolate', 'aguadulce', 'smoothie', 'smoothies',
+];
+
+function esItemBebida(item) {
+  if (item.categoria) {
+    const palabras = normalizeCategory(item.categoria).split(/\s+/);
+    return palabras.some((p) => PALABRAS_CLAVE_BEBIDA.includes(p));
+  }
+  return BEBIDA_ALIASES.some((alias) => normalizeCategory(item.nombre).includes(alias));
+}
+
 // Horarios especiales según el menú físico:
 //   Menú/Plato Ejecutivo: lunes a viernes, 11 a.m. a 4 p.m.
 //   Noche de Bocas: lunes a jueves, 5 p.m. a 10 p.m.
@@ -811,9 +829,20 @@ function sincronizarRondas(rondasPrevias, draftItems) {
     }
     if (diff < 0) {
       let porQuitar = -diff;
+      // Para saber si esta ronda "ya está iniciada" para este ítem en
+      // particular, se chequea el campo que corresponda según si es
+      // comida o bebida — son independientes entre sí dentro de la misma
+      // ronda (ver CocinaView/BebidasView en el admin).
+      // Busca el ítem real (con su categoría) en el draft o, si ya no está
+      // ahí (se quitó del todo), en alguna de las rondas existentes — para
+      // no perder de dónde sacar la categoría y así saber si es bebida.
+      const itemReal = draftPorNombre.get(nombre)
+        || rondas.flatMap((r) => r.items).find((i) => i.nombre === nombre)
+        || { nombre };
+      const esBebida = esItemBebida(itemReal);
       for (const r of rondas) {
         if (porQuitar <= 0) break;
-        if (r.iniciada) continue; // no se toca lo que ya está en preparación
+        if (esBebida ? r.bebidaIniciada : r.comidaIniciada) continue; // ya en preparación, no se toca
         const idx = r.items.findIndex((i) => i.nombre === nombre);
         if (idx === -1) continue;
         const aQuitar = Math.min(r.items[idx].qty, porQuitar);
@@ -864,18 +893,18 @@ async function sendOrder() {
       const rondasPrevias = Array.isArray(existente?.rondas) && existente.rondas.length > 0
         ? existente.rondas
         : (existente?.items?.length
-            ? [{ id: 'r0', items: existente.items, comidaLista: !!existente.comidaLista, bebidaLista: !!existente.bebidaLista, iniciada: existente.status !== 'pending', creadaEn: existente.createdAt || Date.now() }]
+            ? [{ id: 'r0', items: existente.items, comidaLista: !!existente.comidaLista, bebidaLista: !!existente.bebidaLista, comidaIniciada: existente.status !== 'pending', bebidaIniciada: existente.status !== 'pending', creadaEn: existente.createdAt || Date.now() }]
             : []);
       const { rondas: rondasActualizadas, itemsNuevos, bloqueados } = sincronizarRondas(rondasPrevias, state.draftItems);
       payload.rondas = itemsNuevos.length > 0
-        ? [...rondasActualizadas, { id: `r${Date.now()}`, items: itemsNuevos, comidaLista: false, bebidaLista: false, iniciada: false, creadaEn: Date.now() }]
+        ? [...rondasActualizadas, { id: `r${Date.now()}`, items: itemsNuevos, comidaLista: false, bebidaLista: false, comidaIniciada: false, bebidaIniciada: false, creadaEn: Date.now() }]
         : rondasActualizadas;
       if (bloqueados.length > 0) {
         avisoBloqueo = `⚠️ ${bloqueados.join(', ')} ya se está preparando — no se pudo quitar desde acá, avisale directo a cocina/bebidas si hace falta cambiarlo.`;
       }
       ({ queued } = await writeAndContinue(updateDoc(doc(db, 'orders', state.activeOrderId), payload)));
     } else {
-      payload.rondas = [{ id: `r${Date.now()}`, items: state.draftItems, comidaLista: false, bebidaLista: false, iniciada: false, creadaEn: Date.now() }];
+      payload.rondas = [{ id: `r${Date.now()}`, items: state.draftItems, comidaLista: false, bebidaLista: false, comidaIniciada: false, bebidaIniciada: false, creadaEn: Date.now() }];
       // Generamos el ID del pedido localmente (no necesita red) para poder
       // usarlo enseguida, incluso sin conexión.
       const newRef = doc(collection(db, 'orders'));
