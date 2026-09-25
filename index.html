@@ -108,6 +108,9 @@
   .fp-item--normal{border:2px solid #2E6F40;background:linear-gradient(160deg,#4A9D6F,#2E6F40);color:white;}
   .fp-item--normal.busy{background:linear-gradient(160deg,#FF8C42,#FF6B00);border-color:#FF4500;color:white;}
   
+  .fp-item--llevar{border:2px solid #7C3AED;background:linear-gradient(160deg,#A78BFA,#7C3AED);color:white;}
+  .fp-item--llevar.busy{background:linear-gradient(160deg,#EC4899,#DB2777);border-color:#BE185D;color:white;}
+  
   .fp-item--express{border:2px solid #0000FF;background:linear-gradient(160deg,#4D4DFF,#0000CC);color:white;}
   .fp-item--express.busy{background:linear-gradient(160deg,#FF3333,#CC0000);border-color:#990000;color:white;}
   
@@ -1099,7 +1102,9 @@ function floorPlanItem(mesa) {
     }
   } else {
     // Es texto (Llevar, Express)
-    if (mesa.includes('Express')) {
+    if (mesa.includes('Llevar')) {
+      colorClass = 'fp-item--llevar'; // púrpura
+    } else if (mesa.includes('Express')) {
       colorClass = 'fp-item--express'; // azul
     }
   }
