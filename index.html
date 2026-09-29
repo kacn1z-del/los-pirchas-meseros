@@ -615,13 +615,26 @@ const BEBIDA_ALIASES = ['bebida', 'batido', 'gaseosa', 'cerveza', 'licor', 'jugo
 function filteredMenuItems() {
   const term = normalizeText(state.menuSearch).trim();
   if (!term) return state.menuItems;
+  
   return state.menuItems.filter((it) => {
     const nombre = normalizeText(it.nombre);
     const categoria = normalizeText(it.categoria);
+    
+    // ARREGLO: Primero buscá en nombre y categoría directamente
     if (nombre.includes(term) || categoria.includes(term)) return true;
-    if (BEBIDA_ALIASES.some((alias) => alias.includes(term) || term.includes(alias))) {
+    
+    // Si el término es un alias de bebida, mostrar TODAS las bebidas
+    // (no solo si el producto contiene el término)
+    if (BEBIDA_ALIASES.includes(term)) {
       return BEBIDA_ALIASES.some((alias) => categoria.includes(alias));
     }
+    
+    // Si el término contiene o está contenido en un alias, también incluir
+    // (ej. buscar "bat" encuentra "batido")
+    if (BEBIDA_ALIASES.some((alias) => alias.includes(term))) {
+      return BEBIDA_ALIASES.some((alias) => categoria.includes(alias));
+    }
+    
     return false;
   });
 }
