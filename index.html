@@ -218,11 +218,11 @@ const BEBIDA_ALIASES = ['bebida', 'batido', 'gaseosa', 'cerveza', 'licor', 'jugo
 function filteredMenuItems() {
   const term = normalizeText(state.menuSearch).trim();
   if (!term) return state.menuItems;
-
+  
   return state.menuItems.filter((it) => {
     const nombre = normalizeText(it.nombre);
     const categoria = normalizeText(it.categoria);
-
+    
     if (nombre.includes(term)) return true;
     if (categoria.includes(term)) return true;
     if (BEBIDA_ALIASES.includes(term)) {
