@@ -547,21 +547,126 @@ function sincronizarRondas(rondasPrevias, draftItems) {
   return { rondas, itemsNuevos, bloqueados };
 }
 
-function saveDraft() {
-  if (state.draftItems.length === 0) return;
-  const draftData = { mesa: state.activeMesa, items: state.draftItems, notes: state.notes, savedAt: Date.now() };
-  localStorage.setItem(`draft_mesa_${state.activeMesa}`, JSON.stringify(draftData));
-  setState({ draftSaved: Date.now(), hasDraft: true, toast: '💾 Borrador guardado — puedes seguir editando' });
-  setTimeout(() => { setState({ toast: null }); }, 2500);
+// IndexedDB para iOS Safari (más robusto que localStorage)
+const DB_NAME = 'PirchasDrafts';
+const STORE_NAME = 'drafts';
+
+async function initDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onerror = () => reject(req.error);
+    req.onsuccess = () => resolve(req.result);
+    req.onupgradeneeded = (e) => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME, { keyPath: 'mesa' });
+      }
+    };
+  });
 }
 
-function loadDraft(mesa) {
+async function saveDraftToIDB(mesa, draftData) {
+  try {
+    const db = await initDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction([STORE_NAME], 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      const req = store.put({ mesa, ...draftData });
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => resolve(true);
+    });
+  } catch (e) {
+    console.warn('IndexedDB error:', e);
+    return false;
+  }
+}
+
+async function loadDraftFromIDB(mesa) {
+  try {
+    const db = await initDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction([STORE_NAME], 'readonly');
+      const store = tx.objectStore(STORE_NAME);
+      const req = store.get(mesa);
+      req.onerror = () => resolve(null);
+      req.onsuccess = () => {
+        const result = req.result;
+        if (result) {
+          const { mesa, ...data } = result;
+          resolve(data);
+        } else {
+          resolve(null);
+        }
+      };
+    });
+  } catch (e) {
+    console.warn('IndexedDB error:', e);
+    return null;
+  }
+}
+
+async function deleteDraftFromIDB(mesa) {
+  try {
+    const db = await initDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction([STORE_NAME], 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      const req = store.delete(mesa);
+      req.onerror = () => resolve(false);
+      req.onsuccess = () => resolve(true);
+    });
+  } catch (e) {
+    console.warn('IndexedDB error:', e);
+    return false;
+  }
+}
+
+async function saveDraft() {
+  if (state.draftItems.length === 0) return;
+  const draftData = { items: state.draftItems, notes: state.notes, savedAt: Date.now() };
+
+  setState({ saving: true });
+
+  try {
+    // Intenta IndexedDB primero (mejor para iOS)
+    const saved = await saveDraftToIDB(state.activeMesa, draftData);
+    if (saved) {
+      setState({ draftSaved: Date.now(), hasDraft: true, saving: false, toast: '💾 Borrador guardado ✓' });
+      setTimeout(() => { setState({ toast: null }); }, 2500);
+      return;
+    }
+  } catch (e) {
+    console.warn('IndexedDB save failed:', e);
+  }
+
+  // Fallback a localStorage
+  try {
+    localStorage.setItem(`draft_mesa_${state.activeMesa}`, JSON.stringify(draftData));
+    setState({ draftSaved: Date.now(), hasDraft: true, saving: false, toast: '💾 Borrador guardado ✓' });
+    setTimeout(() => { setState({ toast: null }); }, 2500);
+    return;
+  } catch (e) {
+    console.warn('localStorage save failed:', e);
+    setState({ saving: false, toast: '⚠️ No se pudo guardar (modo privado de Safari?)' });
+    setTimeout(() => { setState({ toast: null }); }, 3000);
+  }
+}
+
+async function loadDraft(mesa) {
+  // Intenta IndexedDB primero
+  let draft = await loadDraftFromIDB(mesa);
+  if (draft) return draft;
+
+  // Fallback a localStorage
   const saved = localStorage.getItem(`draft_mesa_${mesa}`);
   if (!saved) return null;
   try { return JSON.parse(saved); } catch (e) { return null; }
 }
 
-function deleteDraft(mesa) { localStorage.removeItem(`draft_mesa_${mesa}`); }
+async function deleteDraft(mesa) {
+  await deleteDraftFromIDB(mesa);
+  localStorage.removeItem(`draft_mesa_${mesa}`);
+}
 
 async function sendOrder() {
   if (state.draftItems.length === 0 || state.saving) return;
@@ -730,7 +835,7 @@ function bindCartSheetEvents() {
   const sendBtn = document.getElementById('send-order');
   if (sendBtn) sendBtn.addEventListener('click', sendOrder);
   const saveDraftBtn = document.getElementById('save-draft');
-  if (saveDraftBtn) saveDraftBtn.addEventListener('click', saveDraft);
+  if (saveDraftBtn) saveDraftBtn.addEventListener('click', () => { saveDraft(); });
   const printBtn = document.getElementById('print-receipt');
   if (printBtn) printBtn.addEventListener('click', printReceipt);
   const goPay = document.getElementById('go-pay');
