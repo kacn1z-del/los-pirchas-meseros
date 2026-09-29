@@ -227,7 +227,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
 import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
-  collection, doc, setDoc, onSnapshot, updateDoc, serverTimestamp, query, where, getDocs, deleteDoc
+  collection, doc, setDoc, onSnapshot, updateDoc, serverTimestamp, query, where
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -547,63 +547,40 @@ function sincronizarRondas(rondasPrevias, draftItems) {
   return { rondas, itemsNuevos, bloqueados };
 }
 
-async function saveDraft() {
+function saveDraft() {
   if (state.draftItems.length === 0) return;
   setState({ saving: true });
+  const draftId = `draft_${state.activeMesa}_${Date.now()}`;
+  const draftData = { mesa: state.activeMesa, mesero: state.mesero, items: state.draftItems, notes: state.notes, status: 'draft', savedAt: serverTimestamp() };
 
-  try {
-    const draftDoc = {
-      mesa: state.activeMesa,
-      mesero: state.mesero,
-      items: state.draftItems,
-      notes: state.notes,
-      savedAt: serverTimestamp(),
-      tipo: SALON.includes(state.activeMesa) ? 'salon' : (LLEVAR.includes(state.activeMesa) ? 'llevar' : 'express'),
-    };
-
-    // Guarda en Firebase con la mesa como ID, en colección 'drafts'
-    await setDoc(doc(db, 'drafts', `draft_${state.activeMesa}_${state.mesero}`), draftDoc);
-
-    setState({
-      saving: false,
-      draftSaved: Date.now(),
-      hasDraft: true,
-      toast: '💾 Borrador guardado ✓'
-    });
+  setDoc(doc(db, 'orders', draftId), draftData).then(() => {
+    setState({ saving: false, draftSaved: Date.now(), hasDraft: true, toast: '💾 Borrador guardado ✓' });
     setTimeout(() => { setState({ toast: null }); }, 2500);
-  } catch (e) {
-    console.error('Error guardando en Firebase:', e);
-    setState({
-      saving: false,
-      toast: '⚠️ Error al guardar'
-    });
+  }).catch((e) => {
+    console.error('Error:', e);
+    setState({ saving: false, toast: '⚠️ Error: ' + e.message });
     setTimeout(() => { setState({ toast: null }); }, 3000);
-  }
+  });
 }
 
-async function loadDraft(mesa) {
+function loadDraft(mesa) {
   try {
-    // Busca borradores de esta mesa en Firebase
-    const q = query(collection(db, 'drafts'), where('mesa', '==', mesa));
-    const snap = await getDocs(q);
-    if (snap.empty) return null;
-
-    const doc = snap.docs[0];
-    const data = doc.data();
-    return { items: data.items, notes: data.notes, savedAt: data.savedAt };
+    let saved = localStorage.getItem(`draft_mesa_${mesa}`);
+    if (!saved) saved = sessionStorage.getItem(`draft_mesa_${mesa}`);
+    if (!saved) return null;
+    return JSON.parse(saved);
   } catch (e) {
-    console.error('Error cargando desde Firebase:', e);
+    console.error('Error cargando:', e);
     return null;
   }
 }
 
-async function deleteDraft(mesa) {
+function deleteDraft(mesa) {
   try {
-    const q = query(collection(db, 'drafts'), where('mesa', '==', mesa));
-    const snap = await getDocs(q);
-    snap.docs.forEach(doc => deleteDoc(doc.ref));
+    localStorage.removeItem(`draft_mesa_${mesa}`);
+    sessionStorage.removeItem(`draft_mesa_${mesa}`);
   } catch (e) {
-    console.error('Error eliminando borrador:', e);
+    console.error('Error eliminando:', e);
   }
 }
 
@@ -774,7 +751,7 @@ function bindCartSheetEvents() {
   const sendBtn = document.getElementById('send-order');
   if (sendBtn) sendBtn.addEventListener('click', sendOrder);
   const saveDraftBtn = document.getElementById('save-draft');
-  if (saveDraftBtn) saveDraftBtn.addEventListener('click', async () => { await saveDraft(); });
+  if (saveDraftBtn) saveDraftBtn.addEventListener('click', () => { saveDraft(); });
   const printBtn = document.getElementById('print-receipt');
   if (printBtn) printBtn.addEventListener('click', printReceipt);
   const goPay = document.getElementById('go-pay');
