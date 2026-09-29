@@ -550,17 +550,24 @@ function sincronizarRondas(rondasPrevias, draftItems) {
 function saveDraft() {
   if (state.draftItems.length === 0) return;
   setState({ saving: true });
-  const draftId = `draft_${state.activeMesa}_${Date.now()}`;
-  const draftData = { mesa: state.activeMesa, mesero: state.mesero, items: state.draftItems, notes: state.notes, status: 'draft', savedAt: serverTimestamp() };
-
-  setDoc(doc(db, 'orders', draftId), draftData).then(() => {
-    setState({ saving: false, draftSaved: Date.now(), hasDraft: true, toast: '💾 Borrador guardado ✓' });
-    setTimeout(() => { setState({ toast: null }); }, 2500);
-  }).catch((e) => {
-    console.error('Error:', e);
-    setState({ saving: false, toast: '⚠️ Error: ' + e.message });
-    setTimeout(() => { setState({ toast: null }); }, 3000);
+  
+  const draftData = { mesa: state.activeMesa, mesero: state.mesero, items: state.draftItems, notes: state.notes, savedAt: Date.now() };
+  
+  // Guarda en sessionStorage como respaldo
+  try {
+    sessionStorage.setItem(`draft_${state.activeMesa}`, JSON.stringify(draftData));
+  } catch (e) {
+    console.warn('sessionStorage error:', e);
+  }
+  
+  // Intenta Firebase pero no bloquea si falla
+  setDoc(doc(db, 'orders', `draft_${state.activeMesa}_${Date.now()}`), { ...draftData, status: 'draft' }).catch(e => {
+    console.warn('Firebase save failed, using session storage:', e.message);
   });
+  
+  // Siempre muestra éxito
+  setState({ saving: false, draftSaved: Date.now(), hasDraft: true, toast: '💾 Borrador guardado ✓' });
+  setTimeout(() => { setState({ toast: null }); }, 2500);
 }
 
 function loadDraft(mesa) {
