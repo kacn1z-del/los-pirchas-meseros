@@ -100,20 +100,20 @@
     font-weight:700;font-family:var(--font-body);font-size:13px;line-height:1.15;
     text-align:center;padding:4px;word-break:break-word;}
   .fp-item.busy{background:linear-gradient(160deg,var(--flame-600),#a12314);border-color:var(--flame-500);}
-  
+
   /* Colores base por tipo de mesa */
   .fp-item--1to19{border:2px solid #FFD700;background:linear-gradient(160deg,#FFF8DC,#FFE74C);color:#333;}
   .fp-item--1to19.busy{background:linear-gradient(160deg,#FF6B6B,#FF4444);border-color:#FF2222;color:white;}
-  
+
   .fp-item--normal{border:2px solid #2E6F40;background:linear-gradient(160deg,#4A9D6F,#2E6F40);color:white;}
   .fp-item--normal.busy{background:linear-gradient(160deg,#FF8C42,#FF6B00);border-color:#FF4500;color:white;}
-  
+
   .fp-item--llevar{border:2px solid #7C3AED;background:linear-gradient(160deg,#A78BFA,#7C3AED);color:white;}
   .fp-item--llevar.busy{background:linear-gradient(160deg,#EC4899,#DB2777);border-color:#BE185D;color:white;}
-  
+
   .fp-item--express{border:2px solid #0000FF;background:linear-gradient(160deg,#4D4DFF,#0000CC);color:white;}
   .fp-item--express.busy{background:linear-gradient(160deg,#FF3333,#CC0000);border-color:#990000;color:white;}
-  
+
   .fp-item small{font-family:var(--font-mono);font-weight:400;opacity:.85;font-size:9px;}
 
   /* ---- Order screen ---- */
@@ -180,9 +180,11 @@
   .sheet-actions{display:flex;gap:10px;margin-top:14px;}
   .btn-primary{flex:1;padding:14px;border-radius:12px;border:none;
     background:linear-gradient(90deg,var(--flame-600),var(--flame-500));color:#fff;font-weight:700;font-size:14px;}
+  .btn-secondary{flex:1;padding:14px;border-radius:12px;border:1px solid var(--char-700);
+    background:var(--char-900);color:var(--paper);font-weight:700;font-size:14px;}
   .btn-ghost{flex:1;padding:14px;border-radius:12px;border:1px solid var(--char-700);
     background:none;color:var(--paper);font-weight:700;font-size:14px;}
-  .btn-primary:disabled,.btn-ghost:disabled{opacity:.4;}
+  .btn-primary:disabled,.btn-secondary:disabled,.btn-ghost:disabled{opacity:.4;}
   .close-x{position:absolute;right:14px;top:14px;background:none;border:none;color:var(--ink-400);font-size:20px;}
   .pay-row{display:flex;gap:8px;margin:10px 0;}
   .pay-chip{flex:1;padding:10px;border-radius:10px;border:1px solid var(--char-700);
@@ -363,7 +365,7 @@ if ('serviceWorker' in navigator) {
 const fmt = (v) => `₡${Number(v ?? 0).toLocaleString('es-CR')}`;
 
 function normalizeCategory(text) {
-  return text.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  return text.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 }
 
 // Misma lista de palabras clave que src/lib/categoriasBebida.js en el
@@ -527,7 +529,7 @@ function normalizeText(text) {
     .toString()
     .toLowerCase()
     .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '');
+    .replace(/[̀-ͯ]/g, '');
 }
 
 // Mismo orden por defecto que usa el sitio del cliente (los-pirchas-cliente
@@ -881,14 +883,14 @@ function sincronizarRondas(rondasPrevias, draftItems) {
 
 function saveDraft() {
   if (state.draftItems.length === 0) return;
-  
+
   const draftData = {
     mesa: state.activeMesa,
     items: state.draftItems,
     notes: state.notes,
     savedAt: Date.now(),
   };
-  
+
   localStorage.setItem(`draft_mesa_${state.activeMesa}`, JSON.stringify(draftData));
   setState({
     draftSaved: Date.now(),
@@ -1132,11 +1134,11 @@ function floorPlanItem(mesa) {
   const busy = !!order;
   const isTakeout = Number.isNaN(Number(mesa));
   const label = isTakeout ? mesa.toUpperCase() : mesa;
-  
+
   // Determinar clase de color según tipo de mesa
   let colorClass = 'fp-item--normal'; // por defecto verde bosque
   const mesaNum = Number(mesa);
-  
+
   if (!Number.isNaN(mesaNum)) {
     // Es número de mesa
     if (mesaNum >= 1 && mesaNum <= 19) {
@@ -1150,7 +1152,7 @@ function floorPlanItem(mesa) {
       colorClass = 'fp-item--express'; // azul
     }
   }
-  
+
   return `
     <button class="fp-item ${colorClass} ${busy ? 'busy' : ''}" data-mesa="${mesa}">
       ${label}
@@ -1211,7 +1213,7 @@ function slugify(text) {
   return text
     .toLowerCase()
     .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[̀-ͯ]/g, '')
     .replace(/[^a-z0-9]+/g, '-');
 }
 
@@ -1246,6 +1248,8 @@ function renderOrder() {
               placeholder="Buscar plato…"
               value="${state.menuSearch.replace(/"/g, '&quot;')}"
               autocomplete="off"
+              oninput="setState({ menuSearch: this.value })"
+              onchange="setState({ menuSearch: this.value })"
             />
             ${searchTerm ? `<button class="menu-search__clear" id="menu-search-clear">✕</button>` : ''}
           </div>
@@ -1455,6 +1459,8 @@ function bindCartSheetEvents() {
 
   const sendBtn = document.getElementById('send-order');
   if (sendBtn) sendBtn.addEventListener('click', sendOrder);
+  const saveDraftBtn = document.getElementById('save-draft');
+  if (saveDraftBtn) saveDraftBtn.addEventListener('click', saveDraft);
   const printBtn = document.getElementById('print-receipt');
   if (printBtn) printBtn.addEventListener('click', printReceipt);
   const goPay = document.getElementById('go-pay');
