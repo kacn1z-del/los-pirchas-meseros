@@ -383,7 +383,6 @@ function groupBySubcategoria(categoria, platos) {
 
 const BEBIDA_ALIASES = ['bebida', 'batido', 'gaseosa', 'cerveza', 'licor', 'jugo', 'smoothie', 'cafe', 'helado', 'refresco'];
 
-// ===== BÚSQUEDA CORREGIDA =====
 function filteredMenuItems() {
   const term = normalizeText(state.menuSearch).trim();
   if (!term) return state.menuItems;
@@ -400,7 +399,6 @@ function filteredMenuItems() {
     return false;
   });
 }
-// =================================
 
 function draftTotal() { return state.draftItems.reduce((s, i) => s + i.precio * i.qty, 0); }
 function draftCount() { return state.draftItems.reduce((s, i) => s + i.qty, 0); }
@@ -553,29 +551,25 @@ function saveDraft() {
   
   const draftData = { mesa: state.activeMesa, mesero: state.mesero, items: state.draftItems, notes: state.notes, savedAt: Date.now() };
   
-  // Guarda en sessionStorage como respaldo
   try {
     sessionStorage.setItem(`draft_${state.activeMesa}`, JSON.stringify(draftData));
   } catch (e) {
     console.warn('sessionStorage error:', e);
   }
   
-  // Intenta guardar en Firebase (colección drafts)
   setDoc(doc(db, 'drafts', `${state.activeMesa}`), { ...draftData, status: 'draft', updatedAt: serverTimestamp() })
     .then(() => {
-      setState({ saving: false, draftSaved: Date.now(), hasDraft: true, toast: '💾 Borrador guardado ✓' });
+      setState({ saving: false, draftSaved: Date.now(), hasDraft: true, toast: '💾 Comanda guardada ✓' });
       setTimeout(() => { setState({ toast: null }); }, 2500);
     })
     .catch(e => {
       console.error('Firebase error:', e.code, e.message);
-      // Muestra el error real
       setState({
         saving: false,
         toast: '⚠️ Error: ' + (e.code || e.message)
       });
       setTimeout(() => { setState({ toast: null }); }, 3000);
     });
-  setTimeout(() => { setState({ toast: null }); }, 2500);
 }
 
 function loadDraft(mesa) {
@@ -765,6 +759,8 @@ function bindCartSheetEvents() {
   if (notesInput) notesInput.addEventListener('change', () => setState({ notes: notesInput.value }));
   const sendBtn = document.getElementById('send-order');
   if (sendBtn) sendBtn.addEventListener('click', sendOrder);
+  const saveDraftBtn = document.getElementById('save-draft');
+  if (saveDraftBtn) saveDraftBtn.addEventListener('click', saveDraft);
   const printBtn = document.getElementById('print-receipt');
   if (printBtn) printBtn.addEventListener('click', printReceipt);
   const goPay = document.getElementById('go-pay');
