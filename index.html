@@ -548,15 +548,15 @@ function sincronizarRondas(rondasPrevias, draftItems) {
 function saveDraft() {
   if (state.draftItems.length === 0) return;
   setState({ saving: true });
-  
+
   const draftData = { mesa: state.activeMesa, mesero: state.mesero, items: state.draftItems, notes: state.notes, savedAt: Date.now() };
-  
+
   try {
     sessionStorage.setItem(`draft_${state.activeMesa}`, JSON.stringify(draftData));
   } catch (e) {
     console.warn('sessionStorage error:', e);
   }
-  
+
   setDoc(doc(db, 'drafts', `${state.activeMesa}`), { ...draftData, status: 'draft', updatedAt: serverTimestamp() })
     .then(() => {
       setState({ saving: false, draftSaved: Date.now(), hasDraft: true, toast: '💾 Comanda guardada ✓' });
@@ -760,7 +760,7 @@ function bindCartSheetEvents() {
   const sendBtn = document.getElementById('send-order');
   if (sendBtn) sendBtn.addEventListener('click', sendOrder);
   const saveDraftBtn = document.getElementById('save-draft');
-  if (saveDraftBtn) saveDraftBtn.addEventListener('click', saveDraft);
+  if (saveDraftBtn) saveDraftBtn.addEventListener('click', sendOrder);
   const printBtn = document.getElementById('print-receipt');
   if (printBtn) printBtn.addEventListener('click', printReceipt);
   const goPay = document.getElementById('go-pay');
