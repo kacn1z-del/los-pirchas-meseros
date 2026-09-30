@@ -617,7 +617,7 @@ async function sendOrder() {
       setState({ activeOrderId: newRef.id });
       ({ queued } = await writeAndContinue(setDoc(newRef, { ...payload, createdAt: serverTimestamp() })));
     }
-    setState({ saving: false, cartOpen: false, toast: avisoBloqueo || (queued ? 'Sin conexión — se enviará solo cuando vuelva la señal' : 'Pedido enviado a cocina') });
+    setState({ saving: false, cartOpen: false, toast: avisoBloqueo || (queued ? 'Sin conexión — se guardará solo cuando vuelva la señal' : '💾 Comanda guardada ✓') });
     setTimeout(() => { setState({ toast: null }); backToTables(); }, avisoBloqueo ? 4500 : (queued ? 3200 : 2200));
   } catch (err) {
     setState({ saving: false, toast: 'Error: ' + err.message });
