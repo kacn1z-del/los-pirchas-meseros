@@ -903,6 +903,8 @@ function bindCartSheetEvents() {
   if (notesInput) notesInput.addEventListener('change', () => setState({ notes: notesInput.value }));
   const sendBtn = document.getElementById('send-order');
   if (sendBtn) sendBtn.addEventListener('click', sendOrder);
+  const saveDraftBtn = document.getElementById('save-draft');
+  if (saveDraftBtn) saveDraftBtn.addEventListener('click', saveDraft);
   const printBtn = document.getElementById('print-receipt');
   if (printBtn) printBtn.addEventListener('click', printReceipt);
   const goPay = document.getElementById('go-pay');
