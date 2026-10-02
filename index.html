@@ -735,7 +735,7 @@ async function sendOrder() {
   setState({ saving: true });
   const tipo = SALON.includes(state.activeMesa) ? 'salon' : (LLEVAR.includes(state.activeMesa) ? 'llevar' : 'express');
   const payload = {
-    mesa: state.activeMesa, tipo, origen: 'salon', mesero: state.mesero, clientName: `Mesa ${state.activeMesa}`,
+    mesa: String(state.activeMesa), tipo, origen: 'salon', mesero: state.mesero, clientName: `Mesa ${state.activeMesa}`,
     restaurantName: 'Los Pirchas', items: state.draftItems, total: draftTotal(), notes: state.notes.trim() || null,
     status: 'pending', mesaAbierta: true, updatedAt: serverTimestamp(),
   };
