@@ -402,6 +402,46 @@ function filteredMenuItems() {
 }
 // =================================
 
+// ===== BALDAZO =====
+const CERVEZAS_NACIONALES = ['Pilsen', 'Pilsen Lime', 'Imperial', 'Imperial Golden Ale', 'Bohemia', 'Bohemia Negra', 'Craft Tica Pale Ale', 'Imperial Silver'];
+const CERVEZAS_INTERNACIONALES = ['Sol', 'Corona', 'Heineken', 'Modelo Especial', 'Stella Artois', 'Guinness', 'Mahou', 'Tecate', 'Budweiser', 'Miller Lite', 'Peroni', 'Duvel'];
+const TODAS_CERVEZAS = [...CERVEZAS_NACIONALES, ...CERVEZAS_INTERNACIONALES];
+
+let baldazoSeleccionadas = [];
+
+function abrirBaldazoModal() {
+  baldazoSeleccionadas = [];
+  setState({ baldazoModalOpen: true });
+}
+
+function cerrarBaldazoModal() {
+  baldazoSeleccionadas = [];
+  setState({ baldazoModalOpen: false });
+}
+
+function toggleBaldazoCerveza(nombre) {
+  const idx = baldazoSeleccionadas.indexOf(nombre);
+  if (idx >= 0) {
+    baldazoSeleccionadas.splice(idx, 1);
+  } else {
+    if (baldazoSeleccionadas.length < 6) {
+      baldazoSeleccionadas.push(nombre);
+    }
+  }
+  render();
+}
+
+function confirmarBaldazo() {
+  if (baldazoSeleccionadas.length !== 6) return;
+  const nota = baldazoSeleccionadas.join(', ');
+  addToDraft({ nombre: 'Baldazo (6 cervezas)', precio: 6000, categoria: 'Bebidas', nota });
+  cerrarBaldazoModal();
+  setState({ toast: '✓ Baldazo agregado' });
+  setTimeout(() => setState({ toast: null }), 2000);
+}
+
+// =================
+
 function draftTotal() { return state.draftItems.reduce((s, i) => s + i.precio * i.qty, 0); }
 function draftCount() { return state.draftItems.reduce((s, i) => s + i.qty, 0); }
 
