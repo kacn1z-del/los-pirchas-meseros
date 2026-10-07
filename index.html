@@ -425,7 +425,7 @@ function toggleBaldazoCerveza(nombre) {
   if (idx >= 0) {
     baldazoSeleccionadas.splice(idx, 1);
   } else {
-    if (baldazoSeleccionadas.length < 6) {
+    if (baldazoSeleccionadas.length < 5) {
       baldazoSeleccionadas.push(nombre);
     }
   }
@@ -433,9 +433,9 @@ function toggleBaldazoCerveza(nombre) {
 }
 
 function confirmarBaldazo() {
-  if (baldazoSeleccionadas.length !== 6) return;
+  if (baldazoSeleccionadas.length !== 5) return;
   const nota = baldazoSeleccionadas.join(', ');
-  addToDraft({ nombre: 'Baldazo (6 cervezas)', precio: 6000, categoria: 'Bebidas', nota });
+  addToDraft({ nombre: 'Baldazo (5 cervezas)', precio: 6000, categoria: 'Bebidas', nota });
   cerrarBaldazoModal();
   setState({ toast: '✓ Baldazo agregado' });
   setTimeout(() => setState({ toast: null }), 2000);
@@ -961,7 +961,7 @@ function renderSplitUI(paymentOptions) {
 
 function renderBaldazoModal() {
   const seleccionadas = baldazoSeleccionadas.length;
-  return `<div class="sheet-overlay" id="baldazo-overlay" style="z-index:50"><div class="sheet" id="baldazo-sheet" style="max-height:90vh"><button class="close-x" id="baldazo-close">✕</button><div class="sheet__handle"></div><h2>🍺 Baldazo (₡6000)</h2><div style="color:var(--ink-400);font-size:13px;margin-bottom:16px">Seleccioná EXACTAMENTE 6 cervezas: ${seleccionadas}/6</div><div style="margin-bottom:20px"><div style="color:var(--ember-400);font-weight:700;font-size:14px;margin-bottom:10px">Cervezas Nacionales</div><div style="display:flex;flex-wrap:wrap;gap:8px">${CERVEZAS_NACIONALES.map((c) => `<button id="cerveza-${encodeURIComponent(c)}" data-cerveza="${c}" style="padding:8px 12px;border-radius:10px;border:2px solid ${baldazoSeleccionadas.includes(c) ? 'var(--flame-600)' : 'var(--char-700)'};background:${baldazoSeleccionadas.includes(c) ? 'var(--flame-600)' : 'var(--char-950)'};color:var(--paper);font-size:13px;font-weight:600;cursor:pointer">${c}${baldazoSeleccionadas.includes(c) ? ' ✓' : ''}</button>`).join('')}</div></div><div style="margin-bottom:20px"><div style="color:var(--ember-400);font-weight:700;font-size:14px;margin-bottom:10px">Cervezas Internacionales</div><div style="display:flex;flex-wrap:wrap;gap:8px">${CERVEZAS_INTERNACIONALES.map((c) => `<button id="cerveza-${encodeURIComponent(c)}" data-cerveza="${c}" style="padding:8px 12px;border-radius:10px;border:2px solid ${baldazoSeleccionadas.includes(c) ? 'var(--flame-600)' : 'var(--char-700)'};background:${baldazoSeleccionadas.includes(c) ? 'var(--flame-600)' : 'var(--char-950)'};color:var(--paper);font-size:13px;font-weight:600;cursor:pointer">${c}${baldazoSeleccionadas.includes(c) ? ' ✓' : ''}</button>`).join('')}</div></div><div class="sheet-actions"><button class="btn-ghost" id="baldazo-cancel">Cancelar</button><button class="btn-primary" id="baldazo-confirm" ${seleccionadas !== 6 ? 'disabled' : ''}>Agregar Baldazo</button></div></div></div>`;
+  return `<div class="sheet-overlay" id="baldazo-overlay" style="z-index:50"><div class="sheet" id="baldazo-sheet" style="max-height:90vh"><button class="close-x" id="baldazo-close">✕</button><div class="sheet__handle"></div><h2>🍺 Baldazo (₡6000)</h2><div style="color:var(--ink-400);font-size:13px;margin-bottom:16px">Seleccioná EXACTAMENTE 5 cervezas: ${seleccionadas}/5</div><div style="margin-bottom:20px"><div style="color:var(--ember-400);font-weight:700;font-size:14px;margin-bottom:10px">Cervezas Nacionales</div><div style="display:flex;flex-wrap:wrap;gap:8px">${CERVEZAS_NACIONALES.map((c) => `<button id="cerveza-${encodeURIComponent(c)}" data-cerveza="${c}" style="padding:8px 12px;border-radius:10px;border:2px solid ${baldazoSeleccionadas.includes(c) ? 'var(--flame-600)' : 'var(--char-700)'};background:${baldazoSeleccionadas.includes(c) ? 'var(--flame-600)' : 'var(--char-950)'};color:var(--paper);font-size:13px;font-weight:600;cursor:pointer">${c}${baldazoSeleccionadas.includes(c) ? ' ✓' : ''}</button>`).join('')}</div></div><div style="margin-bottom:20px"><div style="color:var(--ember-400);font-weight:700;font-size:14px;margin-bottom:10px">Cervezas Internacionales</div><div style="display:flex;flex-wrap:wrap;gap:8px">${CERVEZAS_INTERNACIONALES.map((c) => `<button id="cerveza-${encodeURIComponent(c)}" data-cerveza="${c}" style="padding:8px 12px;border-radius:10px;border:2px solid ${baldazoSeleccionadas.includes(c) ? 'var(--flame-600)' : 'var(--char-700)'};background:${baldazoSeleccionadas.includes(c) ? 'var(--flame-600)' : 'var(--char-950)'};color:var(--paper);font-size:13px;font-weight:600;cursor:pointer">${c}${baldazoSeleccionadas.includes(c) ? ' ✓' : ''}</button>`).join('')}</div></div><div class="sheet-actions"><button class="btn-ghost" id="baldazo-cancel">Cancelar</button><button class="btn-primary" id="baldazo-confirm" ${seleccionadas !== 5 ? 'disabled' : ''}>Agregar Baldazo</button></div></div></div>`;
 }
 
 function bindCartSheetEvents() {
