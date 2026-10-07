@@ -222,11 +222,11 @@
   .baldazo-modal__content{background:var(--char-900);border-radius:16px;max-width:100%;max-height:90vh;overflow-y:auto;padding:20px;width:100%;border:1px solid var(--char-700);}
   .baldazo-modal__header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;}
   .baldazo-modal__title{font-family:var(--font-display);font-size:18px;font-weight:700;margin:0;}
-  .baldazo-modal__close{background:none;border:none;color:var(--ink-400);font-size:24px;cursor:pointer;}
+  .baldazo-modal__close{background:none;border:none;color:var(--ink-400);font-size:24px;cursor:pointer;padding:0;width:24px;height:24px;}
   .baldazo-section{margin-bottom:20px;}
   .baldazo-section__title{font-family:var(--font-display);font-size:14px;font-weight:700;color:var(--ember-400);margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--char-700);}
   .baldazo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;}
-  .baldazo-beer{border:2px solid var(--char-700);border-radius:10px;padding:10px;text-align:center;cursor:pointer;background:var(--char-950);transition:all 0.2s;}
+  .baldazo-beer{border:2px solid var(--char-700);border-radius:10px;padding:10px;text-align:center;background:var(--char-950);transition:all 0.2s;cursor:pointer;}
   .baldazo-beer:active{transform:scale(.95);}
   .baldazo-beer.selected{border-color:var(--flame-600);background:linear-gradient(160deg,rgba(217,57,31,.2),rgba(232,121,43,.1));}
   .baldazo-beer__name{font-size:13px;font-weight:700;color:var(--paper);display:block;margin-bottom:4px;}
@@ -429,7 +429,6 @@ function groupBySubcategoria(categoria, platos) {
 
 const BEBIDA_ALIASES = ['bebida', 'batido', 'gaseosa', 'cerveza', 'licor', 'jugo', 'smoothie', 'cafe', 'helado', 'refresco'];
 
-// ===== BÚSQUEDA CORREGIDA =====
 function filteredMenuItems() {
   const term = normalizeText(state.menuSearch).trim();
   if (!term) return state.menuItems;
@@ -446,7 +445,6 @@ function filteredMenuItems() {
     return false;
   });
 }
-// =================================
 
 function draftTotal() { return state.draftItems.reduce((s, i) => s + i.precio * i.qty, 0); }
 function draftCount() { return state.draftItems.reduce((s, i) => s + i.qty, 0); }
@@ -465,7 +463,6 @@ function backToTables() {
 }
 
 function addToDraft(item) {
-  // Si es baldazo, abrir modal de selección
   if (item.nombre === 'Baldazo' || item.nombre === 'baldazo') {
     setState({ baldazoModalOpen: true, baldazoSelected: [] });
     return;
@@ -504,6 +501,10 @@ function toggleBaldazoBeer(nombre) {
   } else {
     if (selected.length < 6) {
       selected.push(nombre);
+    } else {
+      setState({ toast: 'Máximo 6 cervezas' });
+      setTimeout(() => setState({ toast: null }), 2000);
+      return;
     }
   }
   setState({ baldazoSelected: selected });
@@ -633,15 +634,12 @@ function sincronizarRondas(rondasPrevias, draftItems) {
 function saveDraft() {
   if (state.draftItems.length === 0) return;
   setState({ saving: true });
-  
   const draftData = { mesa: state.activeMesa, mesero: state.mesero, items: state.draftItems, notes: state.notes, savedAt: Date.now() };
-  
   try {
     sessionStorage.setItem(`draft_${state.activeMesa}`, JSON.stringify(draftData));
   } catch (e) {
     console.warn('sessionStorage error:', e);
   }
-  
   setDoc(doc(db, 'drafts', `${state.activeMesa}`), { ...draftData, status: 'draft', updatedAt: serverTimestamp() })
     .then(() => {
       setState({ saving: false, draftSaved: Date.now(), hasDraft: true, toast: '💾 Borrador guardado ✓' });
@@ -678,8 +676,6 @@ function deleteDraft(mesa) {
     console.error('Error eliminando:', e);
   }
 }
-
-// ============ FUNCIONES DE REBAJE DE INVENTARIO ============
 
 const INVENTORY_DEDUCTIONS = {
   hamburguesas: {
@@ -729,12 +725,10 @@ function detectAccompaniment(nombre) {
 
 function calculateInventoryDeductions(itemName) {
   const deductions = [];
-
   for (const [key, config] of Object.entries(INVENTORY_DEDUCTIONS)) {
     if (config.pattern(itemName)) {
       const mainDeductions = config.deductions(itemName);
       deductions.push(...mainDeductions);
-
       if (key === 'hamburguesas' || key === 'casadoChuleta' || key === 'casadoBistec') {
         const accompaniment = detectAccompaniment(itemName);
         if (accompaniment) {
@@ -744,7 +738,6 @@ function calculateInventoryDeductions(itemName) {
       break;
     }
   }
-
   return deductions;
 }
 
@@ -753,7 +746,6 @@ async function deductInventory(items) {
     const result = await runTransaction(db, async (transaction) => {
       const insufficientStock = [];
       const deductionsMap = {};
-
       items.forEach((item) => {
         const deductions = calculateInventoryDeductions(item.nombre);
         deductions.forEach((deduction) => {
@@ -761,15 +753,12 @@ async function deductInventory(items) {
           deductionsMap[key] = (deductionsMap[key] || 0) + deduction.cantidad * (item.qty || 1);
         });
       });
-
       for (const [productName, totalToDeduct] of Object.entries(deductionsMap)) {
         const inventorySnap = await transaction.get(doc(db, 'inventario', productName));
-
         if (!inventorySnap.exists()) {
           insufficientStock.push(`"${productName}" no encontrado en inventario`);
           continue;
         }
-
         const currentStock = inventorySnap.data().cantidad || 0;
         if (currentStock < totalToDeduct) {
           insufficientStock.push(
@@ -781,10 +770,8 @@ async function deductInventory(items) {
           });
         }
       }
-
       return { insufficientStock };
     });
-
     if (result.insufficientStock.length > 0) {
       return {
         success: false,
@@ -792,7 +779,6 @@ async function deductInventory(items) {
         insufficientStock: result.insufficientStock
       };
     }
-
     return {
       success: true,
       message: 'Inventario rebajado correctamente',
@@ -807,8 +793,6 @@ async function deductInventory(items) {
     };
   }
 }
-
-// ============ FIN DE FUNCIONES DE INVENTARIO ============
 
 async function sendOrder() {
   if (state.draftItems.length === 0 || state.saving) return;
@@ -834,12 +818,10 @@ async function sendOrder() {
       setState({ activeOrderId: newRef.id });
       ({ queued } = await writeAndContinue(setDoc(newRef, { ...payload, createdAt: serverTimestamp() })));
     }
-
     const inventoryResult = await deductInventory(state.draftItems);
     if (!inventoryResult.success) {
       console.warn('Advertencia de inventario:', inventoryResult.message);
     }
-
     setState({ saving: false, cartOpen: false, toast: avisoBloqueo || (queued ? 'Sin conexión — se enviará solo cuando vuelva la señal' : 'Pedido enviado a cocina') });
     setTimeout(() => { setState({ toast: null }); backToTables(); }, avisoBloqueo ? 4500 : (queued ? 3200 : 2200));
   } catch (err) {
@@ -978,38 +960,22 @@ function renderBaldazoModal() {
   return `<div class="baldazo-modal" id="baldazo-overlay">
     <div class="baldazo-modal__content">
       <div class="baldazo-modal__header">
-        <h2 class="baldazo-modal__title">Selecciona 6 cervezas para el Baldazo</h2>
+        <h2 class="baldazo-modal__title">Selecciona 6 cervezas</h2>
         <button class="baldazo-modal__close" id="baldazo-close">✕</button>
       </div>
-      
       <div class="baldazo-section">
         <h3 class="baldazo-section__title">Cerveza Nacional</h3>
         <div class="baldazo-grid">
-          ${CERVEZAS_NACIONALES.map((cerveza) => `
-            <button class="baldazo-beer ${state.baldazoSelected.includes(cerveza.nombre) ? 'selected' : ''}" data-beer="${cerveza.nombre}">
-              <span class="baldazo-beer__name">${cerveza.nombre}</span>
-              <span class="baldazo-beer__price">${fmt(cerveza.precio)}</span>
-              <span class="baldazo-beer__check"></span>
-            </button>
-          `).join('')}
+          ${CERVEZAS_NACIONALES.map((cerveza) => `<button class="baldazo-beer ${state.baldazoSelected.includes(cerveza.nombre) ? 'selected' : ''}" data-beer="${cerveza.nombre}"><span class="baldazo-beer__name">${cerveza.nombre}</span><span class="baldazo-beer__price">${fmt(cerveza.precio)}</span><span class="baldazo-beer__check"></span></button>`).join('')}
         </div>
       </div>
-      
       <div class="baldazo-section">
         <h3 class="baldazo-section__title">Cerveza Internacional</h3>
         <div class="baldazo-grid">
-          ${CERVEZAS_INTERNACIONALES.map((cerveza) => `
-            <button class="baldazo-beer ${state.baldazoSelected.includes(cerveza.nombre) ? 'selected' : ''}" data-beer="${cerveza.nombre}">
-              <span class="baldazo-beer__name">${cerveza.nombre}</span>
-              <span class="baldazo-beer__price">${fmt(cerveza.precio)}</span>
-              <span class="baldazo-beer__check"></span>
-            </button>
-          `).join('')}
+          ${CERVEZAS_INTERNACIONALES.map((cerveza) => `<button class="baldazo-beer ${state.baldazoSelected.includes(cerveza.nombre) ? 'selected' : ''}" data-beer="${cerveza.nombre}"><span class="baldazo-beer__name">${cerveza.nombre}</span><span class="baldazo-beer__price">${fmt(cerveza.precio)}</span><span class="baldazo-beer__check"></span></button>`).join('')}
         </div>
       </div>
-      
-      <div class="baldazo-counter">${state.baldazoSelected.length}/6 cervezas seleccionadas</div>
-      
+      <div class="baldazo-counter">${state.baldazoSelected.length}/6 cervezas</div>
       <div class="baldazo-actions">
         <button class="btn-ghost" id="baldazo-cancel">Cancelar</button>
         <button class="btn-primary" id="baldazo-confirm" ${state.baldazoSelected.length === 6 ? '' : 'disabled'}>Confirmar Baldazo</button>
@@ -1067,10 +1033,20 @@ function bindCartSheetEvents() {
   const baldazoOverlay = document.getElementById('baldazo-overlay');
   if (baldazoOverlay) {
     baldazoOverlay.addEventListener('click', (e) => { if (e.target === baldazoOverlay) setState({ baldazoModalOpen: false }); });
-    document.getElementById('baldazo-close').addEventListener('click', () => setState({ baldazoModalOpen: false }));
-    document.getElementById('baldazo-cancel').addEventListener('click', () => setState({ baldazoModalOpen: false }));
-    document.getElementById('baldazo-confirm').addEventListener('click', confirmBaldazo);
-    root.querySelectorAll('[data-beer]').forEach((b) => b.addEventListener('click', () => toggleBaldazoBeer(b.dataset.beer)));
+    const closeBtn = document.getElementById('baldazo-close');
+    if (closeBtn) closeBtn.addEventListener('click', () => setState({ baldazoModalOpen: false }));
+    const cancelBtn = document.getElementById('baldazo-cancel');
+    if (cancelBtn) cancelBtn.addEventListener('click', () => setState({ baldazoModalOpen: false }));
+    const confirmBtn = document.getElementById('baldazo-confirm');
+    if (confirmBtn) confirmBtn.addEventListener('click', confirmBaldazo);
+    const beerButtons = document.querySelectorAll('[data-beer]');
+    beerButtons.forEach((b) => {
+      b.addEventListener('click', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleBaldazoBeer(this.dataset.beer);
+      });
+    });
   }
 }
 
