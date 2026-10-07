@@ -323,6 +323,7 @@ let state = {
   activeMesa: null, activeOrderId: null, pedidoExistente: null, draftSaved: null, hasDraft: false, draftItems: [],
   notes: '', category: null, menuSearch: '', cartOpen: false, paying: false, paymentMethod: 'efectivo', saving: false,
   toast: null, cobroMode: 'junto', splitPersonas: [], splitPersonaSeq: 0, splitAssignments: {}, activePersonaId: null,
+  baldazoModalOpen: false,
 };
 
 const PERSONA_COLORS = ['#d9391f', '#3f9868', '#2b6cb0', '#a83279', '#b58900', '#6b46c1', '#0f9b8e', '#c2410c'];
@@ -402,6 +403,46 @@ function filteredMenuItems() {
 }
 // =================================
 
+// ===== BALDAZO =====
+const CERVEZAS_NACIONALES = ['Pilsen', 'Pilsen Lime', 'Imperial', 'Imperial Golden Ale', 'Bohemia', 'Bohemia Negra', 'Craft Tica Pale Ale', 'Imperial Silver'];
+const CERVEZAS_INTERNACIONALES = ['Sol', 'Corona', 'Heineken', 'Modelo Especial', 'Stella Artois', 'Guinness', 'Mahou', 'Tecate', 'Budweiser', 'Miller Lite', 'Peroni', 'Duvel'];
+const TODAS_CERVEZAS = [...CERVEZAS_NACIONALES, ...CERVEZAS_INTERNACIONALES];
+
+let baldazoSeleccionadas = [];
+
+function abrirBaldazoModal() {
+  baldazoSeleccionadas = [];
+  setState({ baldazoModalOpen: true });
+}
+
+function cerrarBaldazoModal() {
+  baldazoSeleccionadas = [];
+  setState({ baldazoModalOpen: false });
+}
+
+function toggleBaldazoCerveza(nombre) {
+  const idx = baldazoSeleccionadas.indexOf(nombre);
+  if (idx >= 0) {
+    baldazoSeleccionadas.splice(idx, 1);
+  } else {
+    if (baldazoSeleccionadas.length < 6) {
+      baldazoSeleccionadas.push(nombre);
+    }
+  }
+  render();
+}
+
+function confirmarBaldazo() {
+  if (baldazoSeleccionadas.length !== 6) return;
+  const nota = baldazoSeleccionadas.join(', ');
+  addToDraft({ nombre: 'Baldazo (6 cervezas)', precio: 6000, categoria: 'Bebidas', nota });
+  cerrarBaldazoModal();
+  setState({ toast: '✓ Baldazo agregado' });
+  setTimeout(() => setState({ toast: null }), 2000);
+}
+
+// =================
+
 function draftTotal() { return state.draftItems.reduce((s, i) => s + i.precio * i.qty, 0); }
 function draftCount() { return state.draftItems.reduce((s, i) => s + i.qty, 0); }
 
@@ -422,7 +463,7 @@ function addToDraft(item) {
   const items = [...state.draftItems];
   const idx = items.findIndex((i) => i.nombre === item.nombre);
   if (idx >= 0) items[idx] = { ...items[idx], qty: items[idx].qty + 1 };
-  else items.push({ nombre: item.nombre, precio: item.precio, categoria: item.categoria || null, qty: 1, nota: '' });
+  else items.push({ nombre: item.nombre, precio: item.precio, categoria: item.categoria || null, qty: 1, nota: item.nota || '' });
   setState({ draftItems: items });
 }
 
@@ -547,35 +588,45 @@ function sincronizarRondas(rondasPrevias, draftItems) {
   return { rondas, itemsNuevos, bloqueados };
 }
 
-function saveDraft() {
+async function saveDraft() {
   if (state.draftItems.length === 0) return;
   setState({ saving: true });
-  
+
   const draftData = { mesa: state.activeMesa, mesero: state.mesero, items: state.draftItems, notes: state.notes, savedAt: Date.now() };
-  
+
   // Guarda en sessionStorage como respaldo
   try {
     sessionStorage.setItem(`draft_${state.activeMesa}`, JSON.stringify(draftData));
   } catch (e) {
     console.warn('sessionStorage error:', e);
   }
-  
-  // Intenta guardar en Firebase (colección drafts)
-  setDoc(doc(db, 'drafts', `${state.activeMesa}`), { ...draftData, status: 'draft', updatedAt: serverTimestamp() })
-    .then(() => {
-      setState({ saving: false, draftSaved: Date.now(), hasDraft: true, toast: '💾 Borrador guardado ✓' });
-      setTimeout(() => { setState({ toast: null }); }, 2500);
-    })
-    .catch(e => {
-      console.error('Firebase error:', e.code, e.message);
-      // Muestra el error real
-      setState({
-        saving: false,
-        toast: '⚠️ Error: ' + (e.code || e.message)
+
+  try {
+    // Si no hay pedido existente, crea uno; si hay, actualiza
+    if (state.activeOrderId) {
+      await updateDoc(doc(db, 'orders', state.activeOrderId), {
+        items: state.draftItems,
+        notes: state.notes,
+        updatedAt: serverTimestamp()
       });
-      setTimeout(() => { setState({ toast: null }); }, 3000);
-    });
-  setTimeout(() => { setState({ toast: null }); }, 2500);
+    } else {
+      const newRef = doc(collection(db, 'orders'));
+      const tipo = SALON.includes(state.activeMesa) ? 'salon' : (LLEVAR.includes(state.activeMesa) ? 'llevar' : 'express');
+      await setDoc(newRef, {
+        mesa: String(state.activeMesa), tipo, origen: 'salon', mesero: state.mesero, clientName: `Mesa ${state.activeMesa}`,
+        restaurantName: 'Los Pirchas', items: state.draftItems, total: draftTotal(), notes: state.notes.trim() || null,
+        status: 'pending', mesaAbierta: true, createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+        rondas: [{ id: `r${Date.now()}`, items: state.draftItems, comidaLista: false, bebidaLista: false, comidaIniciada: false, bebidaIniciada: false, creadaEn: Date.now() }]
+      });
+      setState({ activeOrderId: newRef.id });
+    }
+    setState({ saving: false, draftSaved: Date.now(), hasDraft: true, toast: '💾 Comanda guardada ✓' });
+    setTimeout(() => { setState({ toast: null }); }, 2500);
+  } catch (e) {
+    console.error('Firebase error:', e.code, e.message);
+    setState({ saving: false, toast: '⚠️ Error: ' + (e.code || e.message) });
+    setTimeout(() => { setState({ toast: null }); }, 3000);
+  }
 }
 
 function loadDraft(mesa) {
@@ -761,8 +812,8 @@ async function sendOrder() {
       console.warn('Advertencia de inventario:', inventoryResult.message);
     }
 
-    setState({ saving: false, cartOpen: false, toast: avisoBloqueo || (queued ? 'Sin conexión — se enviará solo cuando vuelva la señal' : 'Pedido enviado a cocina') });
-    setTimeout(() => { setState({ toast: null }); backToTables(); }, avisoBloqueo ? 4500 : (queued ? 3200 : 2200));
+    setState({ saving: false, cartOpen: true, draftItems: [], toast: avisoBloqueo || (queued ? 'Sin conexión — se enviará solo cuando vuelva la señal' : 'Pedido enviado a cocina') });
+    setTimeout(() => { setState({ toast: null }); }, avisoBloqueo ? 4500 : (queued ? 3200 : 2200));
   } catch (err) {
     setState({ saving: false, toast: 'Error: ' + err.message });
     setTimeout(() => setState({ toast: null }), 3000);
@@ -885,14 +936,17 @@ function slugify(text) { return text.toLowerCase().normalize('NFD').replace(/[̀
 function renderOrder() {
   const searchTerm = state.menuSearch.trim(); const grouped = groupedMenu(filteredMenuItems()); const categories = sortCategories(Object.keys(grouped), state.categoryOrder);
   const hasMenu = state.menuItems.length > 0;
-  root.innerHTML = `<div class="topbar"><button class="topbar__back" id="back-btn">← Mesas</button><div class="topbar__spacer"></div><div class="topbar__mesero">${state.mesero}</div><button class="cart-icon-btn" id="cart-icon">🧾 ${draftCount() > 0 ? `<span class="cart-icon-badge">${draftCount()}</span>` : ''}</button></div><div class="screen"><div class="menu-sticky-head"><div class="order-head"><h1>Mesa ${state.activeMesa}</h1><span>${state.activeOrderId ? 'Pedido abierto' : 'Pedido nuevo'}</span></div>${!hasMenu ? '' : `<div class="menu-search-wrap"><input id="menu-search" class="menu-search" type="text" inputmode="search" placeholder="Buscar plato…" value="${state.menuSearch.replace(/"/g, '&quot;')}" autocomplete="off" oninput="setState({ menuSearch: this.value })" onchange="setState({ menuSearch: this.value })" />${searchTerm ? `<button class="menu-search__clear" id="menu-search-clear">✕</button>` : ''}</div>${!searchTerm ? `<div class="cat-nav">${categories.map((c) => `<button class="cat-chip" data-jump="${slugify(c)}">${c}</button>`).join('')}</div>` : ''}`}</div>${!hasMenu ? `<div class="empty-hint">El menú todavía no tiene platos cargados en Firestore.</div>` : `${categories.length === 0 ? `<div class="empty-hint">No se encontraron platos para "${searchTerm}".</div>` : categories.map((cat) => { const horario = disponibilidadPorHorario(cat); const grupos = groupBySubcategoria(cat, grouped[cat]); return `<div class="menu-section" id="cat-${slugify(cat)}"><div class="menu-section__title">${cat}</div>${horario.mensaje && !horario.disponible ? `<div class="empty-hint">⏰ ${horario.mensaje}</div>` : ''}${grupos.map((grupo) => `${grupo.subcategoria ? `<div class="menu-subcategory">${grupo.subcategoria}</div>` : ''}<div class="item-grid">${grupo.platos.map((it) => { const disponible = it.disponible !== false && horario.disponible; const inCart = state.draftItems.find((d) => d.nombre === it.nombre); return `<button class="item-card ${!disponible ? 'unavailable' : ''}" data-item='${encodeURIComponent(JSON.stringify(it))}' ${!disponible ? 'disabled' : ''}>${inCart ? `<span class="item-card__badge">${inCart.qty}</span>` : ''}<div class="item-card__name">${it.nombre}</div><div class="item-card__price">${fmt(it.precio)}</div></button>`; }).join('')}</div>`).join('')}</div>`; }).join('')}`}</div>${draftCount() > 0 && !state.cartOpen ? `<div class="cart-bar" id="open-cart"><span><span class="count">${draftCount()}</span>Ver pedido</span><span>${fmt(draftTotal())}</span></div>` : ''}${state.cartOpen ? renderCartSheet() : ''}${state.toast ? `<div class="toast">${state.toast}</div>` : ''}`;
+  root.innerHTML = `<div class="topbar"><button class="topbar__back" id="back-btn">← Mesas</button><div class="topbar__spacer"></div><div class="topbar__mesero">${state.mesero}</div><button class="cart-icon-btn" id="cart-icon">🧾 ${draftCount() > 0 ? `<span class="cart-icon-badge">${draftCount()}</span>` : ''}</button></div><div class="screen"><div class="menu-sticky-head"><div class="order-head"><h1>Mesa ${state.activeMesa}</h1><span>${state.activeOrderId ? 'Pedido abierto' : 'Pedido nuevo'}</span></div>${!hasMenu ? '' : `<div class="menu-search-wrap"><input id="menu-search" class="menu-search" type="text" inputmode="search" placeholder="Buscar plato…" value="${state.menuSearch.replace(/"/g, '&quot;')}" autocomplete="off" oninput="setState({ menuSearch: this.value })" onchange="setState({ menuSearch: this.value })" />${searchTerm ? `<button class="menu-search__clear" id="menu-search-clear">✕</button>` : ''}</div>${!searchTerm ? `<div class="cat-nav">${categories.map((c) => `<button class="cat-chip" data-jump="${slugify(c)}">${c}</button>`).join('')}</div>` : ''}`}</div>${!hasMenu ? `<div class="empty-hint">El menú todavía no tiene platos cargados en Firestore.</div>` : `${categories.length === 0 ? `<div class="empty-hint">No se encontraron platos para "${searchTerm}".</div>` : categories.map((cat) => { const horario = disponibilidadPorHorario(cat); const grupos = groupBySubcategoria(cat, grouped[cat]); return `<div class="menu-section" id="cat-${slugify(cat)}"><div class="menu-section__title">${cat}</div>${horario.mensaje && !horario.disponible ? `<div class="empty-hint">⏰ ${horario.mensaje}</div>` : ''}${grupos.map((grupo) => `${grupo.subcategoria ? `<div class="menu-subcategory">${grupo.subcategoria}</div>` : ''}<div class="item-grid">${grupo.platos.map((it) => { const disponible = it.disponible !== false && horario.disponible; const inCart = state.draftItems.find((d) => d.nombre === it.nombre); return `<button class="item-card ${!disponible ? 'unavailable' : ''}" data-item='${encodeURIComponent(JSON.stringify(it))}' ${!disponible ? 'disabled' : ''}>${inCart ? `<span class="item-card__badge">${inCart.qty}</span>` : ''}<div class="item-card__name">${it.nombre}</div><div class="item-card__price">${fmt(it.precio)}</div></button>`; }).join('')}</div>`).join('')}</div>`; }).join('')}<div class="menu-section"><div class="item-grid"><button class="item-card" id="btn-baldazo" style="border-color:var(--ember-400);background:linear-gradient(160deg,var(--flame-600),#a12314)"><div class="item-card__name">🍺 Baldazo</div><div class="item-card__price">₡6000</div></button></div></div>`}</div>${draftCount() > 0 && !state.cartOpen ? `<div class="cart-bar" id="open-cart"><span><span class="count">${draftCount()}</span>Ver pedido</span><span>${fmt(draftTotal())}</span></div>` : ''}${state.cartOpen ? renderCartSheet() : ''}${state.baldazoModalOpen ? renderBaldazoModal() : ''}${state.toast ? `<div class="toast">${state.toast}</div>` : ''}`;
   document.getElementById('back-btn').addEventListener('click', backToTables);
   document.getElementById('cart-icon').addEventListener('click', () => setState({ cartOpen: true }));
   root.querySelectorAll('.cat-chip').forEach((b) => b.addEventListener('click', () => { document.getElementById('cat-' + b.dataset.jump)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }));
   root.querySelectorAll('.item-card').forEach((b) => { if (b.disabled) return; b.addEventListener('click', () => addToDraft(JSON.parse(decodeURIComponent(b.dataset.item)))); });
+  const btnBaldazo = document.getElementById('btn-baldazo');
+  if (btnBaldazo) btnBaldazo.addEventListener('click', abrirBaldazoModal);
   const openCart = document.getElementById('open-cart');
   if (openCart) openCart.addEventListener('click', () => setState({ cartOpen: true }));
   bindCartSheetEvents();
+  bindBaldazoModal();
 }
 
 function renderCartSheet() {
@@ -903,6 +957,11 @@ function renderCartSheet() {
 function renderSplitUI(paymentOptions) {
   const restantes = unassignedCount();
   return `<div class="split-hint">Elegí quién paga y tocá los platos que le tocan a esa persona.</div><div class="split-personas">${state.splitPersonas.map((p, idx) => `<button class="persona-chip ${state.activePersonaId === p.id ? 'active' : ''}" data-persona="${p.id}">${state.splitPersonas.length > 2 ? `<span class="persona-chip__remove" data-remove-persona="${p.id}">✕</span>` : ''}<span class="p-name"><span class="p-dot" style="background:${PERSONA_COLORS[idx % PERSONA_COLORS.length]}"></span>Persona ${idx + 1}</span><span class="p-total">${fmt(personaTotal(p.id))}</span></button>`).join('')}<button class="persona-add" id="add-persona">+ Persona</button></div>${restantes > 0 ? `<div class="split-warning">⚠️ Faltan ${restantes} unidad${restantes === 1 ? '' : 'es'} por asignar</div>` : ''}${state.draftItems.map((it) => { const arr = getAssignments(it.nombre, it.qty); return `<div class="split-item"><div class="split-item__head"><span class="name">${it.nombre}</span><span class="price">${fmt(it.precio)} c/u</span></div><div class="unit-chips">${arr.map((pid, idx) => { const pIdx = state.splitPersonas.findIndex((p) => p.id === pid); const color = pIdx >= 0 ? PERSONA_COLORS[pIdx % PERSONA_COLORS.length] : ''; return `<button class="unit-chip ${pid !== null ? 'assigned' : ''}" style="${pid !== null ? `background:${color}` : ''}" data-unit-nombre="${encodeURIComponent(it.nombre)}" data-unit-qty="${it.qty}" data-unit-idx="${idx}">${pIdx >= 0 ? pIdx + 1 : '–'}</button>`; }).join('')}</div></div>`; }).join('')}<div class="split-summary"><div class="section-title" style="margin-top:14px">Método de pago por persona</div>${state.splitPersonas.map((p, idx) => `<div class="persona-pay"><div class="persona-pay__row"><span class="persona-pay__name"><span class="p-dot" style="background:${PERSONA_COLORS[idx % PERSONA_COLORS.length]}"></span>Persona ${idx + 1}</span><span class="persona-pay__total">${fmt(personaTotal(p.id))}</span></div><div class="pay-row">${paymentOptions.map((opt) => `<button class="pay-chip ${p.metodo === opt.key ? 'active' : ''}" data-persona-pay="${p.id}" data-persona-pay-method="${opt.key}">${opt.label}</button>`).join('')}</div></div>`).join('')}</div><div class="sheet-actions"><button class="btn-ghost" id="cancel-pay">Cancelar</button><button class="btn-primary" id="confirm-pay-split" ${state.saving || restantes > 0 ? 'disabled' : ''}>${state.saving ? 'Cerrando…' : `Cobrar ${fmt(draftTotal())}`}</button></div>`;
+}
+
+function renderBaldazoModal() {
+  const seleccionadas = baldazoSeleccionadas.length;
+  return `<div class="sheet-overlay" id="baldazo-overlay" style="z-index:50"><div class="sheet" id="baldazo-sheet" style="max-height:90vh"><button class="close-x" id="baldazo-close">✕</button><div class="sheet__handle"></div><h2>🍺 Baldazo (₡6000)</h2><div style="color:var(--ink-400);font-size:13px;margin-bottom:16px">Seleccioná EXACTAMENTE 6 cervezas: ${seleccionadas}/6</div><div style="margin-bottom:20px"><div style="color:var(--ember-400);font-weight:700;font-size:14px;margin-bottom:10px">Cervezas Nacionales</div><div style="display:flex;flex-wrap:wrap;gap:8px">${CERVEZAS_NACIONALES.map((c) => `<button id="cerveza-${encodeURIComponent(c)}" data-cerveza="${c}" style="padding:8px 12px;border-radius:10px;border:2px solid ${baldazoSeleccionadas.includes(c) ? 'var(--flame-600)' : 'var(--char-700)'};background:${baldazoSeleccionadas.includes(c) ? 'var(--flame-600)' : 'var(--char-950)'};color:var(--paper);font-size:13px;font-weight:600;cursor:pointer">${c}${baldazoSeleccionadas.includes(c) ? ' ✓' : ''}</button>`).join('')}</div></div><div style="margin-bottom:20px"><div style="color:var(--ember-400);font-weight:700;font-size:14px;margin-bottom:10px">Cervezas Internacionales</div><div style="display:flex;flex-wrap:wrap;gap:8px">${CERVEZAS_INTERNACIONALES.map((c) => `<button id="cerveza-${encodeURIComponent(c)}" data-cerveza="${c}" style="padding:8px 12px;border-radius:10px;border:2px solid ${baldazoSeleccionadas.includes(c) ? 'var(--flame-600)' : 'var(--char-700)'};background:${baldazoSeleccionadas.includes(c) ? 'var(--flame-600)' : 'var(--char-950)'};color:var(--paper);font-size:13px;font-weight:600;cursor:pointer">${c}${baldazoSeleccionadas.includes(c) ? ' ✓' : ''}</button>`).join('')}</div></div><div class="sheet-actions"><button class="btn-ghost" id="baldazo-cancel">Cancelar</button><button class="btn-primary" id="baldazo-confirm" ${seleccionadas !== 6 ? 'disabled' : ''}>Agregar Baldazo</button></div></div></div>`;
 }
 
 function bindCartSheetEvents() {
@@ -939,6 +998,19 @@ function bindCartSheetEvents() {
   root.querySelectorAll('.persona-chip').forEach((b) => b.addEventListener('click', () => setState({ activePersonaId: Number(b.dataset.persona) })));
   root.querySelectorAll('[data-unit-nombre]').forEach((b) => b.addEventListener('click', () => assignUnit(decodeURIComponent(b.dataset.unitNombre), Number(b.dataset.unitQty), Number(b.dataset.unitIdx))));
   root.querySelectorAll('[data-persona-pay]').forEach((b) => b.addEventListener('click', () => setPersonaMetodo(Number(b.dataset.personaPay), b.dataset.personaPayMethod)));
+}
+
+function bindBaldazoModal() {
+  const overlay = document.getElementById('baldazo-overlay');
+  if (!overlay) return;
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) cerrarBaldazoModal(); });
+  const closeBtn = document.getElementById('baldazo-close');
+  if (closeBtn) closeBtn.addEventListener('click', cerrarBaldazoModal);
+  root.querySelectorAll('[data-cerveza]').forEach((b) => b.addEventListener('click', () => toggleBaldazoCerveza(b.dataset.cerveza)));
+  const cancelBtn = document.getElementById('baldazo-cancel');
+  if (cancelBtn) cancelBtn.addEventListener('click', cerrarBaldazoModal);
+  const confirmBtn = document.getElementById('baldazo-confirm');
+  if (confirmBtn) confirmBtn.addEventListener('click', confirmarBaldazo);
 }
 
 let globalListenersInitialized = false;
