@@ -761,8 +761,8 @@ async function sendOrder() {
       console.warn('Advertencia de inventario:', inventoryResult.message);
     }
 
-    setState({ saving: false, cartOpen: false, toast: avisoBloqueo || (queued ? 'Sin conexión — se enviará solo cuando vuelva la señal' : 'Pedido enviado a cocina') });
-    setTimeout(() => { setState({ toast: null }); backToTables(); }, avisoBloqueo ? 4500 : (queued ? 3200 : 2200));
+    setState({ saving: false, cartOpen: true, draftItems: [], toast: avisoBloqueo || (queued ? 'Sin conexión — se enviará solo cuando vuelva la señal' : 'Pedido enviado a cocina') });
+    setTimeout(() => { setState({ toast: null }); }, avisoBloqueo ? 4500 : (queued ? 3200 : 2200));
   } catch (err) {
     setState({ saving: false, toast: 'Error: ' + err.message });
     setTimeout(() => setState({ toast: null }), 3000);
