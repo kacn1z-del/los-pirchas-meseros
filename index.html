@@ -200,6 +200,17 @@
   .persona-pay .pay-chip{font-size:11.5px;padding:7px;}
   .toast{position:fixed;left:50%;top:16px;transform:translateX(-50%);background:var(--status-green);
     color:#fff;padding:10px 18px;border-radius:10px;font-size:13px;font-weight:600;z-index:60;}
+  .baldazo-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:45;display:flex;align-items:flex-end;}
+  .baldazo-modal{width:100%;max-height:90vh;background:var(--char-900);border-radius:20px 20px 0 0;padding:16px 16px 20px;overflow-y:auto;border-top:1px solid var(--char-700);}
+  .baldazo-modal__handle{width:40px;height:4px;background:var(--char-700);border-radius:99px;margin:0 auto 14px;}
+  .baldazo-modal__title{font-family:var(--font-display);font-size:18px;font-weight:700;margin-bottom:12px;}
+  .baldazo-counter{font-size:14px;color:var(--ink-400);margin-bottom:14px;text-align:center;}
+  .baldazo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:10px;margin-bottom:14px;}
+  .baldazo-beer{padding:12px;border-radius:12px;border:2px solid var(--char-700);background:var(--char-950);color:var(--paper);text-align:center;font-size:13px;font-weight:600;cursor:pointer;transition:all .2s;}
+  .baldazo-beer:active{transform:scale(.95);}
+  .baldazo-beer.selected{border-color:var(--flame-600);background:var(--flame-600);color:#fff;}
+  .baldazo-beer.disabled{opacity:.4;cursor:not-allowed;}
+  .baldazo-actions{display:flex;gap:10px;margin-top:14px;}
   .loading{flex:1;display:flex;align-items:center;justify-content:center;color:var(--ink-400);}
   #offline-banner{display:none;position:fixed;top:0;left:0;right:0;z-index:3000;
     background:#b45309;color:#fff;text-align:center;font-size:12.5px;font-weight:700;
@@ -227,7 +238,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
 import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
-  collection, doc, setDoc, deleteDoc, onSnapshot, updateDoc, serverTimestamp, query, where, runTransaction, getDoc
+  collection, doc, setDoc, onSnapshot, updateDoc, serverTimestamp, query, where, runTransaction, getDoc
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -318,11 +329,38 @@ const FLOOR_GROUPS = [
   { row: 'bottom', clusters: [['Llevar 1','Llevar 2','Express 1','Express 2','Express 3']] },
 ];
 
+const CERVEZAS_NACIONALES = [
+  { nombre: 'Pilsen', precio: 1600 },
+  { nombre: 'Pilsen Lime', precio: 1600 },
+  { nombre: 'Imperial', precio: 1600 },
+  { nombre: 'Imperial Golden Ale', precio: 1600 },
+  { nombre: 'Bohemia', precio: 1600 },
+  { nombre: 'Bohemia Negra', precio: 1600 },
+  { nombre: 'Craft Tica Pale Ale', precio: 1800 },
+  { nombre: 'Imperial Silver', precio: 1600 }
+];
+
+const CERVEZAS_INTERNACIONALES = [
+  { nombre: 'Sol', precio: 2200 },
+  { nombre: 'Corona', precio: 2300 },
+  { nombre: 'Heineken', precio: 2400 },
+  { nombre: 'Modelo Especial', precio: 2200 },
+  { nombre: 'Stella Artois', precio: 2600 },
+  { nombre: 'Guinness', precio: 2800 },
+  { nombre: 'Mahou', precio: 2200 },
+  { nombre: 'Tecate', precio: 2100 },
+  { nombre: 'Budweiser', precio: 2200 },
+  { nombre: 'Miller Lite', precio: 2100 },
+  { nombre: 'Peroni', precio: 2600 },
+  { nombre: 'Duvel', precio: 3500 }
+];
+
 let state = {
   mesero: localStorage.getItem('pirchas-mesero') || '', screen: 'login', menuItems: [], categoryOrder: [], openOrders: [],
   activeMesa: null, activeOrderId: null, pedidoExistente: null, draftSaved: null, hasDraft: false, draftItems: [],
   notes: '', category: null, menuSearch: '', cartOpen: false, paying: false, paymentMethod: 'efectivo', saving: false,
   toast: null, cobroMode: 'junto', splitPersonas: [], splitPersonaSeq: 0, splitAssignments: {}, activePersonaId: null,
+  baldazoModalOpen: false, baldazoSelected: [],
 };
 
 const PERSONA_COLORS = ['#d9391f', '#3f9868', '#2b6cb0', '#a83279', '#b58900', '#6b46c1', '#0f9b8e', '#c2410c'];
@@ -735,7 +773,7 @@ async function sendOrder() {
   setState({ saving: true });
   const tipo = SALON.includes(state.activeMesa) ? 'salon' : (LLEVAR.includes(state.activeMesa) ? 'llevar' : 'express');
   const payload = {
-    mesa: String(state.activeMesa), tipo, origen: 'salon', mesero: state.mesero, clientName: `Mesa ${state.activeMesa}`,
+    mesa: state.activeMesa, tipo, origen: 'salon', mesero: state.mesero, clientName: `Mesa ${state.activeMesa}`,
     restaurantName: 'Los Pirchas', items: state.draftItems, total: draftTotal(), notes: state.notes.trim() || null,
     status: 'pending', mesaAbierta: true, updatedAt: serverTimestamp(),
   };
@@ -763,6 +801,47 @@ async function sendOrder() {
 
     setState({ saving: false, cartOpen: false, toast: avisoBloqueo || (queued ? 'Sin conexión — se enviará solo cuando vuelva la señal' : 'Pedido enviado a cocina') });
     setTimeout(() => { setState({ toast: null }); backToTables(); }, avisoBloqueo ? 4500 : (queued ? 3200 : 2200));
+  } catch (err) {
+    setState({ saving: false, toast: 'Error: ' + err.message });
+    setTimeout(() => setState({ toast: null }), 3000);
+  }
+}
+
+function toggleBaldazoBeer(beerName) {
+  const idx = state.baldazoSelected.indexOf(beerName);
+  if (idx >= 0) {
+    state.baldazoSelected.splice(idx, 1);
+  } else if (state.baldazoSelected.length < 6) {
+    state.baldazoSelected.push(beerName);
+  }
+  setState({ baldazoSelected: [...state.baldazoSelected] });
+}
+
+function confirmBaldazo() {
+  if (state.baldazoSelected.length !== 6) {
+    setState({ toast: 'Selecciona exactamente 6 cervezas' });
+    setTimeout(() => setState({ toast: null }), 2000);
+    return;
+  }
+  const baldazoItem = {
+    nombre: `🍺 Baldazo (${state.baldazoSelected.join(', ')})`,
+    precio: 6000,
+    categoria: 'Bebidas',
+    qty: 1,
+    nota: ''
+  };
+  addToDraft(baldazoItem);
+  setState({ baldazoModalOpen: false, baldazoSelected: [], cartOpen: true });
+}
+
+async function deleteOrder() {
+  if (!state.activeOrderId || state.saving) return;
+  if (!confirm('¿Eliminar esta orden? No se podrá recuperar.')) return;
+  setState({ saving: true });
+  try {
+    await updateDoc(doc(db, 'orders', state.activeOrderId), { mesaAbierta: false, status: 'cancelada', updatedAt: serverTimestamp() });
+    setState({ saving: false, cartOpen: false, toast: '✓ Orden eliminada' });
+    setTimeout(() => { setState({ toast: null }); backToTables(); }, 1500);
   } catch (err) {
     setState({ saving: false, toast: 'Error: ' + err.message });
     setTimeout(() => setState({ toast: null }), 3000);
@@ -803,20 +882,6 @@ async function closeTableSplit() {
       items: state.draftItems, closedAt: serverTimestamp(), updatedAt: serverTimestamp(),
     }));
     setState({ saving: false, paying: false, ...resetSplitState(), toast: queued ? 'Sin conexión — se cerrará solo cuando vuelva la señal' : 'Mesa cerrada y cobrada' });
-    setTimeout(() => { setState({ toast: null }); backToTables(); }, queued ? 1800 : 1200);
-  } catch (err) {
-    setState({ saving: false, toast: 'Error: ' + err.message });
-    setTimeout(() => setState({ toast: null }), 3000);
-  }
-}
-
-async function deleteOrder() {
-  if (!state.activeOrderId || state.saving) return;
-  if (!window.confirm('¿Eliminar esta compra? No se podrá cobrar nada en esta mesa.')) return;
-  setState({ saving: true });
-  try {
-    const { queued } = await writeAndContinue(deleteDoc(doc(db, 'orders', state.activeOrderId)));
-    setState({ saving: false, cartOpen: false, toast: queued ? 'Sin conexión — se eliminará solo cuando vuelva la señal' : '🗑️ Compra eliminada' });
     setTimeout(() => { setState({ toast: null }); backToTables(); }, queued ? 1800 : 1200);
   } catch (err) {
     setState({ saving: false, toast: 'Error: ' + err.message });
@@ -885,19 +950,40 @@ function slugify(text) { return text.toLowerCase().normalize('NFD').replace(/[̀
 function renderOrder() {
   const searchTerm = state.menuSearch.trim(); const grouped = groupedMenu(filteredMenuItems()); const categories = sortCategories(Object.keys(grouped), state.categoryOrder);
   const hasMenu = state.menuItems.length > 0;
-  root.innerHTML = `<div class="topbar"><button class="topbar__back" id="back-btn">← Mesas</button><div class="topbar__spacer"></div><div class="topbar__mesero">${state.mesero}</div><button class="cart-icon-btn" id="cart-icon">🧾 ${draftCount() > 0 ? `<span class="cart-icon-badge">${draftCount()}</span>` : ''}</button></div><div class="screen"><div class="menu-sticky-head"><div class="order-head"><h1>Mesa ${state.activeMesa}</h1><span>${state.activeOrderId ? 'Pedido abierto' : 'Pedido nuevo'}</span></div>${!hasMenu ? '' : `<div class="menu-search-wrap"><input id="menu-search" class="menu-search" type="text" inputmode="search" placeholder="Buscar plato…" value="${state.menuSearch.replace(/"/g, '&quot;')}" autocomplete="off" oninput="setState({ menuSearch: this.value })" onchange="setState({ menuSearch: this.value })" />${searchTerm ? `<button class="menu-search__clear" id="menu-search-clear">✕</button>` : ''}</div>${!searchTerm ? `<div class="cat-nav">${categories.map((c) => `<button class="cat-chip" data-jump="${slugify(c)}">${c}</button>`).join('')}</div>` : ''}`}</div>${!hasMenu ? `<div class="empty-hint">El menú todavía no tiene platos cargados en Firestore.</div>` : `${categories.length === 0 ? `<div class="empty-hint">No se encontraron platos para "${searchTerm}".</div>` : categories.map((cat) => { const horario = disponibilidadPorHorario(cat); const grupos = groupBySubcategoria(cat, grouped[cat]); return `<div class="menu-section" id="cat-${slugify(cat)}"><div class="menu-section__title">${cat}</div>${horario.mensaje && !horario.disponible ? `<div class="empty-hint">⏰ ${horario.mensaje}</div>` : ''}${grupos.map((grupo) => `${grupo.subcategoria ? `<div class="menu-subcategory">${grupo.subcategoria}</div>` : ''}<div class="item-grid">${grupo.platos.map((it) => { const disponible = it.disponible !== false && horario.disponible; const inCart = state.draftItems.find((d) => d.nombre === it.nombre); return `<button class="item-card ${!disponible ? 'unavailable' : ''}" data-item='${encodeURIComponent(JSON.stringify(it))}' ${!disponible ? 'disabled' : ''}>${inCart ? `<span class="item-card__badge">${inCart.qty}</span>` : ''}<div class="item-card__name">${it.nombre}</div><div class="item-card__price">${fmt(it.precio)}</div></button>`; }).join('')}</div>`).join('')}</div>`; }).join('')}`}</div>${draftCount() > 0 && !state.cartOpen ? `<div class="cart-bar" id="open-cart"><span><span class="count">${draftCount()}</span>Ver pedido</span><span>${fmt(draftTotal())}</span></div>` : ''}${state.cartOpen ? renderCartSheet() : ''}${state.toast ? `<div class="toast">${state.toast}</div>` : ''}`;
+  root.innerHTML = `<div class="topbar"><button class="topbar__back" id="back-btn">← Mesas</button><div class="topbar__spacer"></div><div class="topbar__mesero">${state.mesero}</div><button class="cart-icon-btn" id="cart-icon">🧾 ${draftCount() > 0 ? `<span class="cart-icon-badge">${draftCount()}</span>` : ''}</button></div><div class="screen"><div class="menu-sticky-head"><div class="order-head"><h1>Mesa ${state.activeMesa}</h1><span>${state.activeOrderId ? 'Pedido abierto' : 'Pedido nuevo'}</span></div>${!hasMenu ? '' : `<div class="menu-search-wrap"><input id="menu-search" class="menu-search" type="text" inputmode="search" placeholder="Buscar plato…" value="${state.menuSearch.replace(/"/g, '&quot;')}" autocomplete="off" oninput="setState({ menuSearch: this.value })" onchange="setState({ menuSearch: this.value })" />${searchTerm ? `<button class="menu-search__clear" id="menu-search-clear">✕</button>` : ''}</div>${!searchTerm ? `<div class="cat-nav">${categories.map((c) => `<button class="cat-chip" data-jump="${slugify(c)}">${c}</button>`).join('')}</div>` : ''}`}</div>${!hasMenu ? `<div class="empty-hint">El menú todavía no tiene platos cargados en Firestore.</div>` : `${categories.length === 0 ? `<div class="empty-hint">No se encontraron platos para "${searchTerm}".</div>` : categories.map((cat) => { const horario = disponibilidadPorHorario(cat); const grupos = groupBySubcategoria(cat, grouped[cat]); return `<div class="menu-section" id="cat-${slugify(cat)}"><div class="menu-section__title">${cat}</div>${horario.mensaje && !horario.disponible ? `<div class="empty-hint">⏰ ${horario.mensaje}</div>` : ''}${grupos.map((grupo) => `${grupo.subcategoria ? `<div class="menu-subcategory">${grupo.subcategoria}</div>` : ''}<div class="item-grid">${grupo.platos.map((it) => { const disponible = it.disponible !== false && horario.disponible; const inCart = state.draftItems.find((d) => d.nombre === it.nombre); return `<button class="item-card ${!disponible ? 'unavailable' : ''}" data-item='${encodeURIComponent(JSON.stringify(it))}' ${!disponible ? 'disabled' : ''}>${inCart ? `<span class="item-card__badge">${inCart.qty}</span>` : ''}<div class="item-card__name">${it.nombre}</div><div class="item-card__price">${fmt(it.precio)}</div></button>`; }).join('')}</div>`).join('')}</div>`; }).join('')}<div class="menu-section"><div class="menu-section__title">🍺 Especial</div><div class="item-grid"><button class="item-card" id="baldazo-btn"><div class="item-card__name">🍺 Baldazo (6 cervezas)</div><div class="item-card__price">₡6.000</div></button></div></div>`}</div>${draftCount() > 0 && !state.cartOpen ? `<div class="cart-bar" id="open-cart"><span><span class="count">${draftCount()}</span>Ver pedido</span><span>${fmt(draftTotal())}</span></div>` : ''}${state.cartOpen ? renderCartSheet() : ''}${state.baldazoModalOpen ? renderBaldazoModal() : ''}${state.toast ? `<div class="toast">${state.toast}</div>` : ''}`;
   document.getElementById('back-btn').addEventListener('click', backToTables);
   document.getElementById('cart-icon').addEventListener('click', () => setState({ cartOpen: true }));
+  const baldazoBtn = document.getElementById('baldazo-btn');
+  if (baldazoBtn) baldazoBtn.addEventListener('click', () => setState({ baldazoModalOpen: true, baldazoSelected: [] }));
   root.querySelectorAll('.cat-chip').forEach((b) => b.addEventListener('click', () => { document.getElementById('cat-' + b.dataset.jump)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }));
   root.querySelectorAll('.item-card').forEach((b) => { if (b.disabled) return; b.addEventListener('click', () => addToDraft(JSON.parse(decodeURIComponent(b.dataset.item)))); });
   const openCart = document.getElementById('open-cart');
   if (openCart) openCart.addEventListener('click', () => setState({ cartOpen: true }));
+
+  // Baldazo modal events
+  root.querySelectorAll('[data-beer]').forEach((btn) => {
+    btn.addEventListener('click', () => toggleBaldazoBeer(btn.dataset.beer));
+  });
+  const baldazoOverlay = document.getElementById('baldazo-overlay');
+  if (baldazoOverlay) {
+    baldazoOverlay.addEventListener('click', (e) => { if (e.target === baldazoOverlay) setState({ baldazoModalOpen: false, baldazoSelected: [] }); });
+  }
+  const baldazoCancel = document.getElementById('baldazo-cancel');
+  if (baldazoCancel) baldazoCancel.addEventListener('click', () => setState({ baldazoModalOpen: false, baldazoSelected: [] }));
+  const baldazoConfirm = document.getElementById('baldazo-confirm');
+  if (baldazoConfirm) baldazoConfirm.addEventListener('click', confirmBaldazo);
+
   bindCartSheetEvents();
+}
+
+function renderBaldazoModal() {
+  const todas = [...CERVEZAS_NACIONALES, ...CERVEZAS_INTERNACIONALES];
+  return `<div class="baldazo-overlay" id="baldazo-overlay"><div class="baldazo-modal"><div class="baldazo-modal__handle"></div><div class="baldazo-modal__title">🍺 Baldazo (₡6.000)</div><div class="baldazo-counter">Selecciona exactamente 6 cervezas (${state.baldazoSelected.length}/6)</div><div class="baldazo-grid">${todas.map((beer) => `<button class="baldazo-beer ${state.baldazoSelected.includes(beer.nombre) ? 'selected' : ''} ${state.baldazoSelected.length >= 6 && !state.baldazoSelected.includes(beer.nombre) ? 'disabled' : ''}" data-beer="${beer.nombre}">${beer.nombre}<br><small>₡${beer.precio}</small></button>`).join('')}</div><div class="baldazo-actions"><button class="btn-ghost" id="baldazo-cancel">Cancelar</button><button class="btn-primary" id="baldazo-confirm" ${state.baldazoSelected.length !== 6 ? 'disabled' : ''}>Confirmar selección</button></div></div></div>`;
 }
 
 function renderCartSheet() {
   const paymentOptions = [{ key: 'efectivo', label: 'Efectivo' }, { key: 'sinpe', label: 'SINPE' }, { key: 'tarjeta', label: 'Tarjeta' }];
-  return `<div class="sheet-overlay" id="sheet-overlay"><div class="sheet" id="sheet"><button class="close-x" id="sheet-close">✕</button><div class="sheet__handle"></div><h2>Mesa ${state.activeMesa}</h2>${state.draftItems.length === 0 ? `<div class="empty-hint">Todavía no hay artículos. Cerrá esto y tocá un plato del menú para agregarlo.</div>` : ''}${state.draftItems.map((i) => `<div class="cart-row"><div class="cart-row__top"><div class="cart-row__name">${i.nombre}<small>${fmt(i.precio)} c/u</small></div><div class="qty-ctrl"><button data-dec="${encodeURIComponent(i.nombre)}">−</button><span>${i.qty}</span><button data-inc="${encodeURIComponent(i.nombre)}">+</button></div><div class="cart-row__sub">${fmt(i.precio * i.qty)}</div></div><input class="cart-row__note" data-note="${encodeURIComponent(i.nombre)}" placeholder="Agregar o quitar algo (ej: sin cebolla, extra queso)" value="${(i.nota || '').replace(/"/g, '&quot;')}" /></div>`).join('')}<textarea id="notes-input" placeholder="Notas para cocina (opcional)" rows="2">${state.notes}</textarea><div class="cart-total"><span>Total</span><span>${fmt(draftTotal())}</span></div>${state.draftItems.length > 0 ? `<div class="sheet-actions"><button class="btn-ghost" id="print-receipt">🖨️ Imprimir recibo</button></div>` : ''}${!state.paying ? `<div class="sheet-actions"><button class="btn-secondary" id="save-draft" ${state.draftItems.length === 0 || state.saving ? 'disabled' : ''}>💾 Guardar Comanda</button><button class="btn-primary" id="send-order" ${state.draftItems.length === 0 || state.saving ? 'disabled' : ''}>${state.saving ? 'Enviando…' : '📤 Enviar a Cocina'}</button></div>${state.activeOrderId ? `<div class="sheet-actions"><button class="btn-ghost" id="go-pay">Cobrar / cerrar mesa</button><button class="btn-ghost" id="delete-order" style="color:#c92f1c;" ${state.saving ? 'disabled' : ''}>🗑️ Eliminar compra</button></div>` : ''}` :`<div class="split-toggle"><button data-mode="junto" class="${state.cobroMode === 'junto' ? 'active' : ''}">Cobrar todo junto</button><button data-mode="dividir" class="${state.cobroMode === 'dividir' ? 'active' : ''}">Dividir entre varios</button></div>${state.cobroMode === 'junto' ? `<div class="section-title" style="margin-top:0">Método de pago</div><div class="pay-row">${paymentOptions.map((p) => `<button class="pay-chip ${state.paymentMethod === p.key ? 'active' : ''}" data-pay="${p.key}">${p.label}</button>`).join('')}</div><div class="sheet-actions"><button class="btn-ghost" id="cancel-pay">Cancelar</button><button class="btn-primary" id="confirm-pay" ${state.saving ? 'disabled' : ''}>${state.saving ? 'Cerrando…' : `Cobrar ${fmt(draftTotal())}`}</button></div>` : renderSplitUI(paymentOptions)}`}</div></div>`;
+  return `<div class="sheet-overlay" id="sheet-overlay"><div class="sheet" id="sheet"><button class="close-x" id="sheet-close">✕</button><div class="sheet__handle"></div><h2>Mesa ${state.activeMesa}</h2>${state.draftItems.length === 0 ? `<div class="empty-hint">Todavía no hay artículos. Cerrá esto y tocá un plato del menú para agregarlo.</div>` : ''}${state.draftItems.map((i) => `<div class="cart-row"><div class="cart-row__top"><div class="cart-row__name">${i.nombre}<small>${fmt(i.precio)} c/u</small></div><div class="qty-ctrl"><button data-dec="${encodeURIComponent(i.nombre)}">−</button><span>${i.qty}</span><button data-inc="${encodeURIComponent(i.nombre)}">+</button></div><div class="cart-row__sub">${fmt(i.precio * i.qty)}</div></div><input class="cart-row__note" data-note="${encodeURIComponent(i.nombre)}" placeholder="Agregar o quitar algo (ej: sin cebolla, extra queso)" value="${(i.nota || '').replace(/"/g, '&quot;')}" /></div>`).join('')}<textarea id="notes-input" placeholder="Notas para cocina (opcional)" rows="2">${state.notes}</textarea><div class="cart-total"><span>Total</span><span>${fmt(draftTotal())}</span></div>${state.draftItems.length > 0 ? `<div class="sheet-actions"><button class="btn-ghost" id="print-receipt">🖨️ Imprimir recibo</button></div>` : ''}${!state.paying ? `<div class="sheet-actions"><button class="btn-secondary" id="save-draft" ${state.draftItems.length === 0 || state.saving ? 'disabled' : ''}>💾 Guardar Comanda</button><button class="btn-primary" id="send-order" ${state.draftItems.length === 0 || state.saving ? 'disabled' : ''}>${state.saving ? 'Enviando…' : '📤 Enviar a Cocina'}</button></div>${state.activeOrderId ? `<div class="sheet-actions"><button class="btn-ghost" id="go-pay">Cobrar / cerrar mesa</button><button class="btn-ghost" id="delete-order" style="color:var(--red-500);">🗑️ Eliminar compra</button></div>` : ''}` : `<div class="split-toggle"><button data-mode="junto" class="${state.cobroMode === 'junto' ? 'active' : ''}">Cobrar todo junto</button><button data-mode="dividir" class="${state.cobroMode === 'dividir' ? 'active' : ''}">Dividir entre varios</button></div>${state.cobroMode === 'junto' ? `<div class="section-title" style="margin-top:0">Método de pago</div><div class="pay-row">${paymentOptions.map((p) => `<button class="pay-chip ${state.paymentMethod === p.key ? 'active' : ''}" data-pay="${p.key}">${p.label}</button>`).join('')}</div><div class="sheet-actions"><button class="btn-ghost" id="cancel-pay">Cancelar</button><button class="btn-primary" id="confirm-pay" ${state.saving ? 'disabled' : ''}>${state.saving ? 'Cerrando…' : `Cobrar ${fmt(draftTotal())}`}</button></div>` : renderSplitUI(paymentOptions)}`}</div></div>`;
 }
 
 function renderSplitUI(paymentOptions) {
