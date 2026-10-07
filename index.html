@@ -467,7 +467,7 @@ function setCobroMode(mode) {
   setState({
     cobroMode: mode,
     splitPersonas: mode === 'junto' ? [] : state.splitPersonas.length === 0 ? [{ id: 1, metodo: 'efectivo' }] : state.splitPersonas,
-    activePersonaId: mode === junto' ? null : (state.activePersonaId || (state.splitPersonas[0]?.id || 1))
+    activePersonaId: mode === 'junto' ? null : (state.activePersonaId || (state.splitPersonas[0]?.id || 1))
   });
 }
 
