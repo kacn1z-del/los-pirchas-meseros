@@ -855,25 +855,59 @@ async function closeTableSplit() {
   if (!state.activeOrderId || state.saving) return;
   if (unassignedCount() > 0) return;
   setState({ saving: true });
-  const payments = state.splitPersonas.map((p, idx) => {
-    const monto = personaTotal(p.id);
-    const items = state.draftItems.map((it) => {
-      const qty = getAssignments(it.nombre, it.qty).filter((pid) => pid === p.id).length;
-      return qty > 0 ? { nombre: it.nombre, precio: it.precio, qty } : null;
-    }).filter(Boolean);
-    return { persona: `Persona ${idx + 1}`, metodo: p.metodo, monto, items };
-  }).filter((p) => p.monto > 0);
+
+  // Una orden por persona: cada cuenta tiene su propio tiquete o factura.
+  const grupos = state.splitPersonas
+    .map((p, idx) => {
+      const items = state.draftItems.map((it) => {
+        const qty = getAssignments(it.nombre, it.qty).filter((pid) => pid === p.id).length;
+        return qty > 0 ? { nombre: it.nombre, precio: it.precio, qty } : null;
+      }).filter(Boolean);
+      return { persona: idx + 1, metodo: p.metodo, monto: personaTotal(p.id), items };
+    })
+    .filter((g) => g.monto > 0);
+
+  if (grupos.length === 0) { setState({ saving: false }); return; }
+
+  const multiple = grupos.length > 1;
+  const grupoId = `cobro_${Date.now()}`;
+  const tipo = SALON.includes(state.activeMesa) ? 'salon' : (LLEVAR.includes(state.activeMesa) ? 'llevar' : 'express');
+  const armar = (g) => ({
+    mesa: String(state.activeMesa), tipo, origen: 'salon', mesero: state.mesero,
+    restaurantName: 'Los Pirchas', status: 'delivered', mesaAbierta: false,
+    clientName: multiple ? `Mesa ${state.activeMesa} · Persona ${g.persona}` : `Mesa ${state.activeMesa}`,
+    paymentMethod: g.metodo, total: g.monto, items: g.items,
+    notes: state.notes.trim() || null, grupoCobro: multiple ? grupoId : null,
+    rondas: [{ id: `r${Date.now()}_${g.persona}`, items: g.items, comidaLista: true, bebidaLista: true, comidaIniciada: true, bebidaIniciada: true, creadaEn: Date.now() }],
+    closedAt: serverTimestamp(), updatedAt: serverTimestamp(),
+  });
+
   try {
-    const { queued } = await writeAndContinue(updateDoc(doc(db, 'orders', state.activeOrderId), {
-      status: 'delivered', mesaAbierta: false, paymentMethod: 'dividido', splitPayment: true, payments, total: draftTotal(),
-      items: state.draftItems, closedAt: serverTimestamp(), updatedAt: serverTimestamp(),
-    }));
-    if (state.clienteTarjeta && !queued) {
-      try { await sumarPuntos(db, state.activeOrderId, state.clienteTarjeta.telefono, draftTotal()); }
+    let algunaEnCola = false;
+    const [primera, ...resto] = grupos;
+
+    // La primera persona usa la orden que ya existe en la mesa.
+    const { queued: q1 } = await writeAndContinue(updateDoc(doc(db, 'orders', state.activeOrderId), armar(primera)));
+    algunaEnCola = algunaEnCola || q1;
+
+    // Las demás personas reciben una orden nueva, cerrada y cobrada.
+    for (const g of resto) {
+      const ref = doc(collection(db, 'orders'));
+      const { queued: q } = await writeAndContinue(setDoc(ref, { ...armar(g), createdAt: serverTimestamp() }));
+      algunaEnCola = algunaEnCola || q;
+    }
+
+    // Los puntos del cliente frecuente van a la cuenta de la primera persona.
+    if (state.clienteTarjeta && !algunaEnCola) {
+      try { await sumarPuntos(db, state.activeOrderId, state.clienteTarjeta.telefono, primera.monto); }
       catch (e) { console.error('No se sumaron puntos:', e); }
     }
-    setState({ saving: false, paying: false, ...resetSplitState(), toast: queued ? 'Sin conexión — se cerrará solo cuando vuelva la señal' : 'Mesa cerrada y cobrada' });
-    setTimeout(() => { setState({ toast: null }); backToTables(); }, queued ? 1800 : 1200);
+
+    const toast = algunaEnCola
+      ? 'Sin conexión — se cerrará solo cuando vuelva la señal'
+      : (multiple ? `Mesa cerrada: ${grupos.length} cuentas separadas` : 'Mesa cerrada y cobrada');
+    setState({ saving: false, paying: false, ...resetSplitState(), toast });
+    setTimeout(() => { setState({ toast: null }); backToTables(); }, algunaEnCola ? 1800 : 1200);
   } catch (err) {
     setState({ saving: false, toast: 'Error: ' + err.message });
     setTimeout(() => setState({ toast: null }), 3000);
